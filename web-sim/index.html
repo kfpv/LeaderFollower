@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>animations.h Web Simulator</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <header>
+    <h1>animations.h Web Simulator</h1>
+    <div class="controls">
+      <label>Animation
+        <select id="anim">
+          <option value="1">wave</option>
+          <option value="2">pulse</option>
+          <option value="3">chase</option>
+          <option value="0">staticOn</option>
+        </select>
+      </label>
+      <label>Speed <input type="range" id="speed" min="0" max="20" step="0.1" value="6"/></label>
+      <label>Phase <input type="range" id="phase" min="-6.283" max="6.283" step="0.01" value="0"/></label>
+      <label>Branch mode <input type="checkbox" id="branch" checked/></label>
+      <label>Width <input type="range" id="width" min="1" max="10" step="1" value="3"/></label>
+      <label>Static level <input type="range" id="level" min="0" max="1" step="0.01" value="0.5"/></label>
+      <button id="pauseBtn">Pause</button>
+    </div>
+  </header>
+
+  <canvas id="canvas"></canvas>
+
+  <footer>
+    <p>Uses the exact C++ <code>animations.h</code> compiled to WebAssembly. Colors fade from black to purple.</p>
+  </footer>
+
+  <script type="module" src="./sim.js"></script>
+</body>
+</html>
