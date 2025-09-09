@@ -6,6 +6,7 @@ static constexpr uint8_t MSG_REQ = 0x01;
 static constexpr uint8_t MSG_SYNC = 0x02;
 static constexpr uint8_t MSG_BRIGHTNESS = 0x03;
 static constexpr uint8_t MSG_ACK = 0x04;
+static constexpr uint8_t MSG_CFG = 0x05;
 
 // Layout: type(1) | time_ms(4) | frame(4) | anim_code(2) | pad(1)=0
 // total 12 bytes
@@ -29,6 +30,22 @@ struct BrightnessPacket {
 
 struct ReqPacket {
   uint8_t type{MSG_REQ};
+} __attribute__((packed));
+
+// Animation configuration packet (compact, packed)
+// Layout: type(1) | role(1) | animIndex(1) | width(1) | flags(1)
+//         | speed(float) | phase(float) | globalSpeed(float)
+struct CfgPacket {
+  uint8_t type{MSG_CFG};
+  uint8_t role{0}; // 0=leader,1=follower
+  uint8_t animIndex{0};
+  uint8_t width{0};
+  uint8_t flags{0}; // bit0: branchMode, bit1: invert
+  float speed{0.0f};
+  float phase{0.0f};
+  float globalSpeed{1.0f};
+  float minScale{0.0f};
+  float maxScale{1.0f};
 } __attribute__((packed));
 
 inline uint16_t encodeAnimCode(uint8_t animIndex) { return animIndex; }

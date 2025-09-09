@@ -86,6 +86,37 @@ class HeltecLoRa : public CommunicationInterface {
   bool sendReq() override {
   Proto::ReqPacket p; Serial.println("TX REQ"); return sendRaw((uint8_t*)&p, sizeof(p));
   }
+  bool sendAnimCfg(uint8_t role,
+                   uint8_t animIndex,
+                   float speed,
+                   float phase,
+                   uint8_t width,
+                   bool branchMode,
+                   bool invert,
+                   float globalSpeed,
+                   float minScale,
+                   float maxScale) override {
+    Proto::CfgPacket p;
+    p.role = role;
+    p.animIndex = animIndex;
+    p.width = width;
+    p.flags = (branchMode ? 0x01 : 0x00) | (invert ? 0x02 : 0x00);
+    p.speed = speed;
+    p.phase = phase;
+    p.globalSpeed = globalSpeed;
+    p.minScale = minScale;
+    p.maxScale = maxScale;
+    Serial.print("TX CFG role="); Serial.print(p.role);
+    Serial.print(" anim="); Serial.print(p.animIndex);
+    Serial.print(" speed="); Serial.print(p.speed);
+    Serial.print(" phase="); Serial.print(p.phase);
+    Serial.print(" width="); Serial.print(p.width);
+    Serial.print(" flags="); Serial.print(p.flags);
+    Serial.print(" gSpeed="); Serial.print(p.globalSpeed);
+    Serial.print(" min="); Serial.print(p.minScale);
+    Serial.print(" max="); Serial.println(p.maxScale);
+    return sendRaw((uint8_t*)&p, sizeof(p));
+  }
 
   bool poll(Message &outMsg) override {
     if (!_hasRx) return false;
@@ -110,6 +141,28 @@ class HeltecLoRa : public CommunicationInterface {
   auto *p = reinterpret_cast<Proto::BrightnessPacket*>(_rxBuf);
   outMsg.type = (Message::Type)Proto::MSG_BRIGHTNESS; outMsg.brightness = p->percent/100.0f;
   Serial.print("RX BRIGHTNESS percent="); Serial.println(p->percent);
+  return true;
+    } else if (type == Proto::MSG_CFG && _rxSize >= sizeof(Proto::CfgPacket)) {
+  auto *p = reinterpret_cast<Proto::CfgPacket*>(_rxBuf);
+  outMsg.type = (Message::Type)Proto::CFG;
+  outMsg.cfg_role = p->role;
+  outMsg.cfg_animIndex = p->animIndex;
+  outMsg.cfg_width = p->width;
+  outMsg.cfg_flags = p->flags;
+  outMsg.cfg_speed = p->speed;
+  outMsg.cfg_phase = p->phase;
+  outMsg.cfg_globalSpeed = p->globalSpeed;
+  outMsg.cfg_min = p->minScale;
+  outMsg.cfg_max = p->maxScale;
+  Serial.print("RX CFG role="); Serial.print(p->role);
+  Serial.print(" anim="); Serial.print(p->animIndex);
+  Serial.print(" speed="); Serial.print(p->speed);
+  Serial.print(" phase="); Serial.print(p->phase);
+  Serial.print(" width="); Serial.print(p->width);
+  Serial.print(" flags="); Serial.print(p->flags);
+  Serial.print(" gSpeed="); Serial.print(p->globalSpeed);
+  Serial.print(" min="); Serial.print(p->minScale);
+  Serial.print(" max="); Serial.println(p->maxScale);
   return true;
     } else if (type == Proto::MSG_REQ && _rxSize >= sizeof(Proto::ReqPacket)) {
   outMsg.type = (Message::Type)Proto::MSG_REQ;
