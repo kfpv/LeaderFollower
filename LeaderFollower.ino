@@ -18,6 +18,8 @@ struct Node {
   uint32_t lastSyncSent{0};
   uint32_t lastPrintMs{0};
   uint32_t framesSincePrint{0};
+  // time sync offset (leader_time_ms - local_now_ms). Used by followers.
+  int32_t timeOffsetMs{0};
   
   // ACK tracking (like Python protocol)
   bool pendingAck{false};
@@ -37,7 +39,30 @@ struct Node {
     Message msg;
     while (comm->poll(msg)) {
       if (!isLeader && msg.type == Message::SYNC) {
+        // Follower: ACK and apply time sync offset if needed
         comm->sendAck(msg.frame);
+        int32_t now32 = (int32_t)millis();
+        int32_t newOffset = (int32_t)msg.time_ms - now32;
+        int32_t diff = newOffset - timeOffsetMs;
+        int32_t adiff = diff < 0 ? -diff : diff;
+        const int32_t kThresholdMs = 100; // tighter threshold than 150ms
+        if (adiff > kThresholdMs) {
+          // For moderate diffs, slews half-way to avoid visible jumps
+          if (adiff < 200) {
+            timeOffsetMs += diff / 2; // gentle correction
+            Serial.print("[SYNC] Slew by ms="); Serial.println(diff / 2);
+          } else {
+            timeOffsetMs = newOffset; // large jump -> snap
+            Serial.print("[SYNC] Snap offset to ms="); Serial.println(timeOffsetMs);
+          }
+        } else {
+          // Already close enough
+          // Serial.print("[SYNC] Small diff ms="); Serial.println(adiff);
+        }
+        // Optionally adopt animation index from leader
+        if (msg.anim_code != 0) {
+          animIndex = (uint8_t)msg.anim_code;
+        }
       } else if (isLeader && msg.type == Message::ACK) {
         // Handle ACK received by leader
         if (pendingAck && msg.frame == pendingAckFrame) {
@@ -75,8 +100,10 @@ struct Node {
         pendingAckFrame = currentFrame;
       }
     }
-    static float buf[Anim::TOTAL_LEDS];
-    float t = now/1000.0f;
+  static float buf[Anim::TOTAL_LEDS];
+  // Use synced time for followers
+  uint32_t baseNow = isLeader ? now : (uint32_t)((int32_t)now + timeOffsetMs);
+  float t = baseNow/1000.0f;
     Anim::wave(t, Anim::TOTAL_LEDS, 3.0f, 0.0f, true, buf);
 
     // FPS and LED values printing every 500 ms
