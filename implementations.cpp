@@ -66,18 +66,25 @@ class HeltecLoRa : public CommunicationInterface {
   }
 
   bool sendSync(uint32_t time_ms, uint32_t frame, uint16_t animCode) override {
-    Proto::SyncPacket p; p.time_ms = time_ms; p.frame = frame; p.anim_code = animCode;
-    return sendRaw((uint8_t*)&p, sizeof(p));
+  Proto::SyncPacket p; p.time_ms = time_ms; p.frame = frame; p.anim_code = animCode;
+  // Log transmit
+  Serial.print("TX SYNC time_ms="); Serial.print(p.time_ms);
+  Serial.print(" frame="); Serial.print(p.frame);
+  Serial.print(" anim="); Serial.println(p.anim_code);
+  return sendRaw((uint8_t*)&p, sizeof(p));
   }
   bool sendAck(uint32_t frame) override {
-    Proto::AckPacket p; p.frame = frame; return sendRaw((uint8_t*)&p, sizeof(p));
+  Proto::AckPacket p; p.frame = frame;
+  Serial.print("TX ACK frame="); Serial.println(p.frame);
+  return sendRaw((uint8_t*)&p, sizeof(p));
   }
   bool sendBrightness(float brightness) override {
-    Proto::BrightnessPacket p; p.percent = (uint8_t)constrain((int)(brightness*100.0f),0,100);
-    return sendRaw((uint8_t*)&p, sizeof(p));
+  Proto::BrightnessPacket p; p.percent = (uint8_t)constrain((int)(brightness*100.0f),0,100);
+  Serial.print("TX BRIGHTNESS percent="); Serial.println(p.percent);
+  return sendRaw((uint8_t*)&p, sizeof(p));
   }
   bool sendReq() override {
-    Proto::ReqPacket p; return sendRaw((uint8_t*)&p, sizeof(p));
+  Proto::ReqPacket p; Serial.println("TX REQ"); return sendRaw((uint8_t*)&p, sizeof(p));
   }
 
   bool poll(Message &outMsg) override {
@@ -90,15 +97,24 @@ class HeltecLoRa : public CommunicationInterface {
       auto *p = reinterpret_cast<Proto::SyncPacket*>(_rxBuf);
       outMsg.type = (Message::Type)Proto::MSG_SYNC;
       outMsg.time_ms = p->time_ms; outMsg.frame = p->frame; outMsg.anim_code = p->anim_code;
+  Serial.print("RX SYNC time_ms="); Serial.print(p->time_ms);
+  Serial.print(" frame="); Serial.print(p->frame);
+  Serial.print(" anim="); Serial.println(p->anim_code);
       return true;
     } else if (type == Proto::MSG_ACK && _rxSize >= sizeof(Proto::AckPacket)) {
-      auto *p = reinterpret_cast<Proto::AckPacket*>(_rxBuf);
-      outMsg.type = (Message::Type)Proto::MSG_ACK; outMsg.frame = p->frame; return true;
+  auto *p = reinterpret_cast<Proto::AckPacket*>(_rxBuf);
+  outMsg.type = (Message::Type)Proto::MSG_ACK; outMsg.frame = p->frame;
+  Serial.print("RX ACK frame="); Serial.println(p->frame);
+  return true;
     } else if (type == Proto::MSG_BRIGHTNESS && _rxSize >= sizeof(Proto::BrightnessPacket)) {
-      auto *p = reinterpret_cast<Proto::BrightnessPacket*>(_rxBuf);
-      outMsg.type = (Message::Type)Proto::MSG_BRIGHTNESS; outMsg.brightness = p->percent/100.0f; return true;
+  auto *p = reinterpret_cast<Proto::BrightnessPacket*>(_rxBuf);
+  outMsg.type = (Message::Type)Proto::MSG_BRIGHTNESS; outMsg.brightness = p->percent/100.0f;
+  Serial.print("RX BRIGHTNESS percent="); Serial.println(p->percent);
+  return true;
     } else if (type == Proto::MSG_REQ && _rxSize >= sizeof(Proto::ReqPacket)) {
-      outMsg.type = (Message::Type)Proto::MSG_REQ; return true;
+  outMsg.type = (Message::Type)Proto::MSG_REQ;
+  Serial.println("RX REQ");
+  return true;
     }
     return false;
   }
