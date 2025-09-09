@@ -2,6 +2,7 @@
 #include "interfaces.h"
 #include "animations.h"
 #include "protocol.h"
+#include "node_config.h"
 
 extern CommunicationInterface* createCommunication();
 extern LEDInterface* createLEDs();
@@ -109,7 +110,7 @@ struct Node {
 } node;
 
 void setup(){
-  node.isLeader = true; // set false on follower
+  node.isLeader = IS_LEADER; // defined in node_config.h
   node.comm = createCommunication();
   node.leds = createLEDs();
   node.timeif = createTimeIf();
