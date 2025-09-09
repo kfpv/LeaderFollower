@@ -95,10 +95,9 @@ struct Node {
     }
     uint32_t now = millis();
 
-    // Follower: proactively request sync on boot and when out of sync
-    if (!isLeader) {
-      bool needReq = (lastSyncRecvMs == 0) || (now - lastSyncRecvMs > reqInterval);
-      if (needReq && (lastReqSentMs == 0 || now - lastReqSentMs > reqInterval)) {
+    // Follower: only request sync until first SYNC is received
+    if (!isLeader && lastSyncRecvMs == 0) {
+      if (lastReqSentMs == 0 || now - lastReqSentMs > reqInterval) {
         comm->sendReq();
         lastReqSentMs = now;
       }
