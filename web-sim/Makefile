@@ -8,8 +8,7 @@ OUT_DIR = dist
 EMCC ?= emcc
 CXXFLAGS = -O3 -s MODULARIZE=1 -s ENVIRONMENT=web -fno-exceptions -fno-rtti -I.
 LDFLAGS = -s ALLOW_MEMORY_GROWTH=1 -s EXPORT_ES6=1 \
-	-s EXPORTED_RUNTIME_METHODS='["cwrap","ccall","UTF8ToString"]' \
-	-s EXPORTED_FUNCTIONS='["_anim_branches","_anim_leds_per_branch","_anim_total_leds","_anim_eval","_anim_eval2","_anim_value_at","_malloc"]'
+	-s EXPORTED_FUNCTIONS='["_anim_branches","_anim_leds_per_branch","_anim_total_leds","_anim_eval","_anim_eval_store","_anim_eval2","_anim_get_value","_anim_value_at"]'
 
 all: $(OUT_DIR)/$(TARGET).mjs $(OUT_DIR)/$(TARGET).wasm
 

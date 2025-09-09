@@ -11,7 +11,7 @@ inline void staticOn(float t, uint16_t n, float level, float *out) {
   for (uint16_t i = 0; i < n; ++i) out[i] = level;
 }
 
-inline void wave(float t, uint16_t n, float speed, float phase, bool branchMode, float *out) {
+inline void wave(float t, uint16_t n, float speed, float phase, bool branchMode, bool invert, float *out) {
   const float twoPi = 6.28318530718f;
   if (branchMode) {
     for (uint8_t b = 0; b < BRANCHES; ++b) {
@@ -19,14 +19,16 @@ inline void wave(float t, uint16_t n, float speed, float phase, bool branchMode,
       for (uint8_t i = 0; i < LEDS_PER_BRANCH; ++i) {
         uint16_t idx = b * LEDS_PER_BRANCH + i;
         if (idx >= n) break;
-        float angle = (float)i / (float)LEDS_PER_BRANCH * twoPi + t * speed + bp;
+        uint8_t ii = invert ? (uint8_t)(LEDS_PER_BRANCH - 1 - i) : i;
+        float angle = (float)ii / (float)LEDS_PER_BRANCH * twoPi + t * speed + bp;
         float v = 0.5f + 0.5f * sinf(angle);
         out[idx] = v;
       }
     }
   } else {
     for (uint16_t i = 0; i < n; ++i) {
-      float angle = (float)i / (float)n * twoPi + t * speed + phase;
+      uint16_t ii = invert ? (uint16_t)(n - 1 - i) : i;
+      float angle = (float)ii / (float)n * twoPi + t * speed + phase;
       out[i] = 0.5f + 0.5f * sinf(angle);
     }
   }

@@ -28,8 +28,8 @@ void anim_eval(int anim_id, float t, float a, float b, float c, float d, float* 
     case 0: // staticOn(t, n, level)
       staticOn(t, TOTAL_LEDS, a, out_ptr);
       break;
-    case 1: // wave(t, n, speed, phase, branchMode)
-      wave(t, TOTAL_LEDS, a /*speed*/, b /*phase*/, (bool)c /*branchMode*/, out_ptr);
+    case 1: // wave(t, n, speed, phase, branchMode, invert)
+      wave(t, TOTAL_LEDS, a /*speed*/, b /*phase*/, (bool)c /*branchMode*/, (bool)d /*invert*/, out_ptr);
       break;
     case 2: // pulse(t, n, speed, phase, branchMode)
       pulse(t, TOTAL_LEDS, a /*speed*/, b /*phase*/, (bool)c /*branchMode*/, out_ptr);
@@ -45,13 +45,21 @@ void anim_eval(int anim_id, float t, float a, float b, float c, float d, float* 
   }
 }
 
-// Variant that writes into an internal buffer; then JS can read per-index values.
-void anim_eval2(int anim_id, float t, float a, float b, float c, float d) {
+// Evaluate and store into an internal buffer accessible via getters from JS.
+void anim_eval_store(int anim_id, float t, float a, float b, float c, float d) {
   anim_eval(anim_id, t, a, b, c, d, g_out);
 }
 
-float anim_value_at(uint16_t idx) {
-  if (idx < Anim::TOTAL_LEDS) return g_out[idx];
-  return 0.0f;
+// JS-facing alternate name
+void anim_eval2(int anim_id, float t, float a, float b, float c, float d) {
+  anim_eval_store(anim_id, t, a, b, c, d);
 }
+
+// Return one value from the internal buffer (0..TOTAL_LEDS-1).
+float anim_get_value(uint16_t i) {
+  if (i >= Anim::TOTAL_LEDS) return 0.0f;
+  return g_out[i];
+}
+
+float anim_value_at(uint16_t i) { return anim_get_value(i); }
 }

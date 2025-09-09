@@ -14,13 +14,27 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas);
 
-// UI elements
-const animSel = document.getElementById('anim');
-const speedEl = document.getElementById('speed');
-const phaseEl = document.getElementById('phase');
-const branchEl = document.getElementById('branch');
-const widthEl = document.getElementById('width');
-const levelEl = document.getElementById('level');
+// UI elements (two trees)
+const animA = document.getElementById('animA');
+// per-tree specific controls
+// const speedA = document.getElementById('speedA');
+// const phaseA = document.getElementById('phaseA');
+const branchA = document.getElementById('branchA');
+const widthA = document.getElementById('widthA');
+const levelA = document.getElementById('levelA');
+
+const animB = document.getElementById('animB');
+// const speedB = document.getElementById('speedB');
+// const phaseB = document.getElementById('phaseB');
+
+// Global controls
+const speedGlobal = document.getElementById('speedGlobal');
+const phaseGlobal = document.getElementById('phaseGlobal');
+const branchB = document.getElementById('branchB');
+const widthB = document.getElementById('widthB');
+const levelB = document.getElementById('levelB');
+const invertA = document.getElementById('invertA');
+const invertB = document.getElementById('invertB');
 const pauseBtn = document.getElementById('pauseBtn');
 
 pauseBtn.onclick = () => { paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; };
@@ -75,13 +89,10 @@ function computeLayout(BRANCHES, LEDS_PER_BRANCH, radius = 300) {
   return {positions, connectors, branchTips};
 }
 
-function drawLayout(layout, values) {
-  // Clear
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Translate origin to center
+function drawLayoutAt(layout, values, cx, cy, scale=1) {
   ctx.save();
-  ctx.translate(canvas.clientWidth/2, canvas.clientHeight/2);
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
 
   // Draw main stems
   ctx.strokeStyle = 'rgba(160,160,160,0.25)';
@@ -111,34 +122,72 @@ function drawLayout(layout, values) {
   ctx.restore();
 }
 
+// Compute extents (max |x|, max |y|) including LED radius
+function computeExtents(layout) {
+  const R = 14;
+  let maxX = 0, maxY = 0;
+  for (const p of layout.positions) {
+    if (Math.abs(p.x) + R > maxX) maxX = Math.abs(p.x) + R;
+    if (Math.abs(p.y) + R > maxY) maxY = Math.abs(p.y) + R;
+  }
+  for (const tip of layout.branchTips) {
+    if (Math.abs(tip.x) + R > maxX) maxX = Math.abs(tip.x) + R;
+    if (Math.abs(tip.y) + R > maxY) maxY = Math.abs(tip.y) + R;
+  }
+  return {maxX, maxY};
+}
+
 let BRANCHES = 4, LEDS_PER_BRANCH = 7, TOTAL = 28;
-let layout = computeLayout(BRANCHES, LEDS_PER_BRANCH);
-// No direct heap usage anymore; we’ll call anim_eval2 and sample values via anim_value_at
+let layoutLeft = computeLayout(BRANCHES, LEDS_PER_BRANCH);
+let layoutRight = computeLayout(BRANCHES, LEDS_PER_BRANCH);
+let valuesA = new Float32Array(TOTAL);
+let valuesB = new Float32Array(TOTAL);
 
 function step(timeMs) {
   if (!Module) return requestAnimationFrame(step);
   if (!paused) {
-    const t = timeMs / 1000;
-    const animId = Number(animSel.value);
+  const t = timeMs / 1000; // synced time for both
 
-    // Params mapping per wasm_shim
-    let a=0,b=0,c=0,d=0;
-    if (animId === 0) { a = Number(levelEl.value); }
-    else if (animId === 1 || animId === 2) {
-      a = Number(speedEl.value);
-      b = Number(phaseEl.value);
-      c = branchEl.checked ? 1 : 0;
-    } else if (animId === 3) {
-      a = Number(speedEl.value);
-      b = Number(widthEl.value);
-      c = branchEl.checked ? 1 : 0;
+  // Left tree
+  let a=0,b=0,c=0,d=0;
+  const animIdA = Number(animA.value);
+  if (animIdA === 0) { a = Number(levelA.value); }
+  else if (animIdA === 1) { a = Number(speedGlobal.value); b = Number(phaseGlobal.value); c = branchA.checked ? 1 : 0; d = invertA.checked ? 1 : 0; }
+  else if (animIdA === 2) { a = Number(speedGlobal.value); b = Number(phaseGlobal.value); c = branchA.checked ? 1 : 0; }
+  else if (animIdA === 3) { a = Number(speedGlobal.value); b = Number(widthA.value); c = branchA.checked ? 1 : 0; }
+  Module._anim_eval2(animIdA, t, a, b, c, d);
+  for (let i=0;i<TOTAL;i++) valuesA[i] = Module._anim_value_at(i);
+
+  // Right tree
+  a=b=c=d=0;
+  const animIdB = Number(animB.value);
+  if (animIdB === 0) { a = Number(levelB.value); }
+  else if (animIdB === 1) { a = Number(speedGlobal.value); b = Number(phaseGlobal.value); c = branchB.checked ? 1 : 0; d = invertB.checked ? 1 : 0; }
+  else if (animIdB === 2) { a = Number(speedGlobal.value); b = Number(phaseGlobal.value); c = branchB.checked ? 1 : 0; }
+  else if (animIdB === 3) { a = Number(speedGlobal.value); b = Number(widthB.value); c = branchB.checked ? 1 : 0; }
+  Module._anim_eval2(animIdB, t, a, b, c, d);
+  for (let i=0;i<TOTAL;i++) valuesB[i] = Module._anim_value_at(i);
+
+  // draw side-by-side
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    const cx = cw/2, cy = ch/2;
+    const {maxX, maxY} = computeExtents(layoutLeft);
+    const edge = 24, between = 80; // margins
+    const desiredDx = maxX + between; // center to center spacing target
+    const maxDxAllowed = Math.max(20, cw/2 - maxX - edge);
+    let scale = 1.0;
+    if (desiredDx > maxDxAllowed) scale = maxDxAllowed / desiredDx;
+    // Constrain by vertical space as well
+    if (maxY > 0) {
+      const maxScaleY = Math.max(0.2, (ch/2 - edge) / maxY);
+      scale = Math.min(scale, maxScaleY);
     }
+    scale = Math.max(0.2, Math.min(scale, 1.0));
+    const dx = desiredDx * scale;
 
-  Module._anim_eval2(animId, t, a, b, c, d);
-  // Pull values on demand to a JS array for drawing
-  const values = tmpValues;
-  for (let i = 0; i < TOTAL; i++) values[i] = Module._anim_value_at(i);
-  drawLayout(layout, values);
+    drawLayoutAt(layoutLeft, valuesA, cx - dx, cy, scale);
+    drawLayoutAt(layoutRight, valuesB, cx + dx, cy, scale);
   }
   requestAnimationFrame(step);
 }
@@ -150,13 +199,12 @@ async function boot() {
   BRANCHES = Module._anim_branches();
   LEDS_PER_BRANCH = Module._anim_leds_per_branch();
   TOTAL = Module._anim_total_leds();
-  layout = computeLayout(BRANCHES, LEDS_PER_BRANCH);
-
-  // Prepare a local JS buffer for drawing
-  tmpValues = new Float32Array(TOTAL);
+  layoutLeft = computeLayout(BRANCHES, LEDS_PER_BRANCH);
+  layoutRight = computeLayout(BRANCHES, LEDS_PER_BRANCH);
+  valuesA = new Float32Array(TOTAL);
+  valuesB = new Float32Array(TOTAL);
 
   requestAnimationFrame(step);
 }
 
-let tmpValues = new Float32Array(TOTAL);
 boot();

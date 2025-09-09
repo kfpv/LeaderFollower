@@ -128,7 +128,7 @@ struct Node {
   // Use synced time for followers
   uint32_t baseNow = isLeader ? now : (uint32_t)((int32_t)now + timeOffsetMs);
   float t = baseNow/1000.0f;
-    Anim::wave(t, Anim::TOTAL_LEDS, 3.0f, 0.0f, true, buf);
+  Anim::wave(t, Anim::TOTAL_LEDS, 3.0f, 0.0f, true, false, buf);
 
     // FPS and LED values printing every 500 ms
     framesSincePrint++;
