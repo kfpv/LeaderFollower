@@ -144,7 +144,7 @@ class HeltecLoRa : public CommunicationInterface {
   return true;
     } else if (type == Proto::MSG_CFG && _rxSize >= sizeof(Proto::CfgPacket)) {
   auto *p = reinterpret_cast<Proto::CfgPacket*>(_rxBuf);
-  outMsg.type = (Message::Type)Proto::CFG;
+  outMsg.type = Message::CFG;
   outMsg.cfg_role = p->role;
   outMsg.cfg_animIndex = p->animIndex;
   outMsg.cfg_width = p->width;
