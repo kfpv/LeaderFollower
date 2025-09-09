@@ -134,11 +134,19 @@ class HeltecLoRa : public CommunicationInterface {
     if (instance_) instance_->onRxDone(payload, size, rssi, snr);
   }
 
-  void onTxDone() { /* optional: set flags */ }
+  void onTxDone() {
+    // After any transmission, immediately go back to RX to listen for responses (e.g., ACK)
+    Serial.println("RADIO: TX done -> RX");
+    Radio.Sleep();
+    Radio.Rx(0);
+  }
   void onTxTimeout() { Radio.Sleep(); Radio.Rx(0); }
-  void onRxDone(uint8_t *payload, uint16_t size, int16_t, int8_t) {
+  void onRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr) {
     _rxSize = min<uint16_t>(size, sizeof(_rxBuf));
     memcpy(_rxBuf, payload, _rxSize);
+    Serial.print("RADIO: RX done size="); Serial.print(_rxSize);
+    Serial.print(" rssi="); Serial.print(rssi);
+    Serial.print(" snr="); Serial.println(snr);
     Radio.Sleep();
     _hasRx = true;
     Radio.Rx(0);
