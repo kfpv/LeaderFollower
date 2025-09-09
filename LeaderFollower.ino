@@ -20,6 +20,10 @@ struct Node {
   uint32_t framesSincePrint{0};
   // time sync offset (leader_time_ms - local_now_ms). Used by followers.
   int32_t timeOffsetMs{0};
+  // Follower sync request bookkeeping
+  uint32_t lastSyncRecvMs{0};
+  uint32_t lastReqSentMs{0};
+  uint32_t reqInterval{2000}; // follower sends REQ every 2s until synced
   
   // ACK tracking (like Python protocol)
   bool pendingAck{false};
@@ -37,10 +41,11 @@ struct Node {
   void tick() {
     comm->loop();
     Message msg;
-    while (comm->poll(msg)) {
+  while (comm->poll(msg)) {
       if (!isLeader && msg.type == Message::SYNC) {
         // Follower: ACK and apply time sync offset if needed
         comm->sendAck(msg.frame);
+    lastSyncRecvMs = millis();
         int32_t now32 = (int32_t)millis();
         int32_t newOffset = (int32_t)msg.time_ms - now32;
         int32_t diff = newOffset - timeOffsetMs;
@@ -69,11 +74,28 @@ struct Node {
           pendingAck = false;
           Serial.print("ACK confirmed for frame "); Serial.println(msg.frame);
         }
+      } else if (isLeader && msg.type == Message::REQ) {
+        // Leader: respond to REQ immediately with a SYNC
+        uint32_t nowReq = millis();
+        uint32_t currentFrameReq = nowReq / 33;
+        comm->sendSync(nowReq, currentFrameReq, Proto::encodeAnimCode(animIndex));
+        lastSyncSent = nowReq;
+        pendingAck = true;
+        pendingAckFrame = currentFrameReq;
       } else if (msg.type == Message::BRIGHTNESS) {
         brightness = msg.brightness; leds->setBrightness(brightness);
       }
     }
     uint32_t now = millis();
+
+    // Follower: proactively request sync on boot and when out of sync
+    if (!isLeader) {
+      bool needReq = (lastSyncRecvMs == 0) || (now - lastSyncRecvMs > reqInterval);
+      if (needReq && (lastReqSentMs == 0 || now - lastReqSentMs > reqInterval)) {
+        comm->sendReq();
+        lastReqSentMs = now;
+      }
+    }
     
     // Leader sync logic with ACK tracking (like Python protocol)
     if (isLeader) {
