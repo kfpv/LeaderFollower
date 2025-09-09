@@ -15,6 +15,8 @@ struct Node {
   float brightness{1.0f};
   uint8_t animIndex{1};
   uint32_t lastSyncSent{0};
+  uint32_t lastPrintMs{0};
+  uint32_t framesSincePrint{0};
 
   void begin() {
     Serial.begin(115200);
@@ -41,6 +43,33 @@ struct Node {
     static float buf[Anim::TOTAL_LEDS];
     float t = now/1000.0f;
     Anim::wave(t, Anim::TOTAL_LEDS, 3.0f, 0.0f, true, buf);
+
+    // FPS and LED values printing every 500 ms
+    framesSincePrint++;
+    if (now - lastPrintMs >= 500) {
+      float fps = framesSincePrint * 1000.0f / float(now - lastPrintMs);
+      Serial.print("FPS: "); Serial.println(fps);
+
+      // Map brightness to 5 levels: 0..4 -> characters from low to high
+      const char mapChars[5] = { ' ', '.', ':', '*', '#' };
+      // Print one line per branch to simulate in-terminal display
+      for (uint8_t b = 0; b < Anim::BRANCHES; ++b) {
+        Serial.print("Branch "); Serial.print(b); Serial.print(": ");
+        for (uint8_t i = 0; i < Anim::LEDS_PER_BRANCH; ++i) {
+          uint16_t idx = b * Anim::LEDS_PER_BRANCH + i;
+          float v = buf[idx];
+          // apply global brightness as well
+          v = constrain(v * brightness, 0.0f, 1.0f);
+          uint8_t level = (uint8_t)roundf(v * 4.0f); // 0..4
+          Serial.print(mapChars[level]);
+        }
+        Serial.println();
+      }
+
+      lastPrintMs = now;
+      framesSincePrint = 0;
+    }
+
     leds->setLEDs(buf, Anim::TOTAL_LEDS);
   }
 } node;
