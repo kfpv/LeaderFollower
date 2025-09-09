@@ -17,6 +17,12 @@ struct Node {
   uint32_t lastSyncSent{0};
   uint32_t lastPrintMs{0};
   uint32_t framesSincePrint{0};
+  
+  // ACK tracking (like Python protocol)
+  bool pendingAck{false};
+  uint32_t pendingAckFrame{0};
+  uint32_t ackTimeout{2000}; // 2 seconds like Python
+  uint32_t syncInterval{60000}; // 1 minute between regular syncs
 
   void begin() {
     Serial.begin(115200);
@@ -31,14 +37,42 @@ struct Node {
     while (comm->poll(msg)) {
       if (!isLeader && msg.type == Message::SYNC) {
         comm->sendAck(msg.frame);
+      } else if (isLeader && msg.type == Message::ACK) {
+        // Handle ACK received by leader
+        if (pendingAck && msg.frame == pendingAckFrame) {
+          pendingAck = false;
+          Serial.print("ACK confirmed for frame "); Serial.println(msg.frame);
+        }
       } else if (msg.type == Message::BRIGHTNESS) {
         brightness = msg.brightness; leds->setBrightness(brightness);
       }
     }
     uint32_t now = millis();
-    if (isLeader && now - lastSyncSent > 100) {
-      comm->sendSync(now, now/33, Proto::encodeAnimCode(animIndex));
-      lastSyncSent = now;
+    
+    // Leader sync logic with ACK tracking (like Python protocol)
+    if (isLeader) {
+      bool shouldSend = false;
+      uint32_t currentFrame = now/33;
+      
+      if (!pendingAck) {
+        // No pending ACK - send sync every minute or if this is first sync
+        if (lastSyncSent == 0 || (now - lastSyncSent > syncInterval)) {
+          shouldSend = true;
+        }
+      } else {
+        // Pending ACK - check for timeout and resend every 2s
+        if (now - lastSyncSent > ackTimeout) {
+          shouldSend = true;
+          Serial.println("ACK timeout - resending SYNC");
+        }
+      }
+      
+      if (shouldSend) {
+        comm->sendSync(now, currentFrame, Proto::encodeAnimCode(animIndex));
+        lastSyncSent = now;
+        pendingAck = true;
+        pendingAckFrame = currentFrame;
+      }
     }
     static float buf[Anim::TOTAL_LEDS];
     float t = now/1000.0f;
