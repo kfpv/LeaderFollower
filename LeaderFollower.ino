@@ -75,13 +75,20 @@ struct Node {
           Serial.print("ACK confirmed for frame "); Serial.println(msg.frame);
         }
       } else if (isLeader && msg.type == Message::REQ) {
-        // Leader: respond to REQ immediately with a SYNC
-        uint32_t nowReq = millis();
-        uint32_t currentFrameReq = nowReq / 33;
-        comm->sendSync(nowReq, currentFrameReq, Proto::encodeAnimCode(animIndex));
-        lastSyncSent = nowReq;
-        pendingAck = true;
-        pendingAckFrame = currentFrameReq;
+          // Leader: if pending, re-send the SAME frame; otherwise start a new in-flight SYNC
+          uint32_t nowReq = millis();
+          if (pendingAck) {
+            Serial.print("REQ: resending SAME frame "); Serial.println(pendingAckFrame);
+            comm->sendSync(nowReq, pendingAckFrame, Proto::encodeAnimCode(animIndex));
+            lastSyncSent = nowReq;
+          } else {
+            uint32_t currentFrameReq = nowReq / 33;
+            Serial.print("REQ: sending NEW frame "); Serial.println(currentFrameReq);
+            comm->sendSync(nowReq, currentFrameReq, Proto::encodeAnimCode(animIndex));
+            lastSyncSent = nowReq;
+            pendingAck = true;
+            pendingAckFrame = currentFrameReq;
+          }
       } else if (msg.type == Message::BRIGHTNESS) {
         brightness = msg.brightness; leds->setBrightness(brightness);
       }
@@ -97,29 +104,25 @@ struct Node {
       }
     }
     
-    // Leader sync logic with ACK tracking (like Python protocol)
+    // Leader sync logic with ACK tracking (single in-flight frame)
     if (isLeader) {
-      bool shouldSend = false;
-      uint32_t currentFrame = now/33;
-      
       if (!pendingAck) {
         // No pending ACK - send sync every minute or if this is first sync
         if (lastSyncSent == 0 || (now - lastSyncSent > syncInterval)) {
-          shouldSend = true;
+          uint32_t currentFrame = now / 33;
+          Serial.print("SYNC: new frame "); Serial.println(currentFrame);
+          comm->sendSync(now, currentFrame, Proto::encodeAnimCode(animIndex));
+          lastSyncSent = now;
+          pendingAck = true;
+          pendingAckFrame = currentFrame;
         }
       } else {
-        // Pending ACK - check for timeout and resend every 2s
+        // Pending ACK - on timeout, resend the SAME frame
         if (now - lastSyncSent > ackTimeout) {
-          shouldSend = true;
-          Serial.println("ACK timeout - resending SYNC");
+          Serial.print("ACK timeout - resending SAME frame "); Serial.println(pendingAckFrame);
+          comm->sendSync(now, pendingAckFrame, Proto::encodeAnimCode(animIndex));
+          lastSyncSent = now;
         }
-      }
-      
-      if (shouldSend) {
-        comm->sendSync(now, currentFrame, Proto::encodeAnimCode(animIndex));
-        lastSyncSent = now;
-        pendingAck = true;
-        pendingAckFrame = currentFrame;
       }
     }
   static float buf[Anim::TOTAL_LEDS];
