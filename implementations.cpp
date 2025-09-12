@@ -21,11 +21,13 @@ class Pca9685LEDs : public LEDInterface {
   explicit Pca9685LEDs(uint8_t addr1 = 0x40, uint8_t addr2 = 0x41, bool useSecond = true)
       : _pwm1(addr1), _pwm2(addr2), _useSecond(useSecond) {}
   void begin() override {
+    // Initialize I2C on specified pins (user requirement: SDA=5, SCL=6, 400kHz)
+    Wire.begin(5, 6, 400000); // SDA, SCL, Frequency
     _pwm1.begin();
-    _pwm1.setPWMFreq(1000); // fast PWM for dimming
+    _pwm1.setPWMFreq(1600); // maximum PWM frequency per PCA9685 datasheet / library
     if (_useSecond) {
       _pwm2.begin();
-      _pwm2.setPWMFreq(1000);
+      _pwm2.setPWMFreq(1600);
     }
     setBrightness(1.0f);
   }
