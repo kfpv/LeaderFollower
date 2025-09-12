@@ -31,14 +31,19 @@ class Pca9685LEDs : public LEDInterface {
   }
   void setBrightness(float b) override { _global = constrain(b, 0.0f, 1.0f); }
   void setLEDs(const float *values, size_t count) override {
+    Serial.print("Setting LEDs: ");
+    Serial.println(count);
     // Map first 16 channels to addr1, remaining to addr2
     for (size_t i = 0; i < count; ++i) {
       float v = constrain(values[i] * _global, 0.0f, 1.0f);
       uint16_t pwm = (uint16_t)(v * 4095.0f);
       if (i < 16) {
         _pwm1.setPWM((uint8_t)i, 0, pwm);
+        Serial.print("1"+i+":"+pwm+" ");
+
       } else if (_useSecond) {
         _pwm2.setPWM((uint8_t)(i - 16), 0, pwm);
+        Serial.print("2"+i+":"+pwm+" ");
       }
     }
   }
