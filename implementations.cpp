@@ -44,7 +44,7 @@ class Pca9685LEDs : public LEDInterface {
       if (i < 16) {
         _pwm1.setPWM((uint8_t)i, 0, pwm);
   Serial.print('1');
-  Serial.print(i-16);
+  Serial.print(i);
   Serial.print(':');
   Serial.print(pwm);
   Serial.print(' ');
@@ -52,7 +52,7 @@ class Pca9685LEDs : public LEDInterface {
       } else if (_useSecond) {
         _pwm2.setPWM((uint8_t)(i - 16), 0, pwm);
   Serial.print('2');
-  Serial.print(i-16);
+  Serial.print((uint8_t)(i - 16));
   Serial.print(':');
   Serial.print(pwm);
   Serial.print(' ');
