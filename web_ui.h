@@ -152,7 +152,27 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   let L_selected=-1, F_selected=-1;
   buildGrid('L_ledGrid', (i,btn)=>{L_selected = (L_selected===i)?-1:i; selectExclusive('L_ledGrid', L_selected); if(L_selected===-1){/* none */} if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
   buildGrid('F_ledGrid', (i,btn)=>{F_selected = (F_selected===i)?-1:i; selectExclusive('F_ledGrid', F_selected); if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
-  function updateDiffs(){const pairs=[['anim','L_anim','F_anim',v=>v],['speed','L_speed_n','F_speed_n',parseFloat],['phase','L_phase_n','F_phase_n',parseFloat],['width','L_width_n','F_width_n',parseFloat],['branch','L_branch','F_branch',el=>$(el).checked?1:0],['invert','L_invert','F_invert',el=>$(el).checked?1:0]];pairs.forEach(([field,la,fa,fn])=>{const lv=fn(la);const fv=fn(fa);const diff=(lv!==fv);document.querySelectorAll('.row[data-field="'+field+'" ]').forEach(r=>{r.classList.toggle('diff',diff);const btn=r.querySelector('.sync-btn');if(btn)btn.classList.toggle('show',diff);});});}
+    function getVal(id){const el=$(id);if(!el) return null; if(el.type==='checkbox') return el.checked?1:0; if(el.type==='number' || el.type==='range') return parseFloat(el.value); return el.value;}
+    function updateDiffs(){
+      const fields=[
+        {f:'anim', l:'L_anim', r:'F_anim'},
+        {f:'speed', l:'L_speed_n', r:'F_speed_n'},
+        {f:'phase', l:'L_phase_n', r:'F_phase_n'},
+        {f:'width', l:'L_width_n', r:'F_width_n'},
+        {f:'branch', l:'L_branch', r:'F_branch'},
+        {f:'invert', l:'L_invert', r:'F_invert'}
+      ];
+      fields.forEach(d=>{
+        const lv=getVal(d.l);
+        const rv=getVal(d.r);
+        const diff=(lv!==rv && !(isNaN(lv)&&isNaN(rv)));
+        document.querySelectorAll('.row[data-field="'+d.f+'"]').forEach(row=>{
+          row.classList.toggle('diff',diff);
+          const btn=row.querySelector('.sync-btn');
+          if(btn) btn.classList.toggle('show',diff);
+        });
+      });
+    }
   async function load(){try{const r=await fetch('/api/state');const s=await r.json();$('globalSpeed').value=$('globalSpeed_n').value=s.globalSpeed;$('globalMin').value=$('globalMin_n').value=s.globalMin;$('globalMax').value=$('globalMax_n').value=s.globalMax;$('L_anim').value=s.leader.animIndex;$('L_speed').value=$('L_speed_n').value=s.leader.speed;$('L_phase').value=$('L_phase_n').value=s.leader.phase;$('L_width').value=$('L_width_n').value=s.leader.width;$('L_branch').checked=s.leader.branchMode;$('L_invert').checked=s.leader.invert;$('F_anim').value=s.follower.animIndex;$('F_speed').value=$('F_speed_n').value=s.follower.speed;$('F_phase').value=$('F_phase_n').value=s.follower.phase;$('F_width').value=$('F_width_n').value=s.follower.width;$('F_branch').checked=s.follower.branchMode;$('F_invert').checked=s.follower.invert; L_selected=-1;F_selected=-1; selectExclusive('L_ledGrid',-1); selectExclusive('F_ledGrid',-1); updateDiffs();}catch(e){console.error(e);}}
     async function apply(){const f=new URLSearchParams();f.set('globalSpeed',$('globalSpeed_n').value);f.set('globalMin',$('globalMin_n').value);f.set('globalMax',$('globalMax_n').value);
       // Determine per side whether sequential is active and pack into fields
@@ -169,7 +189,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         f.set('F_anim',$('F_anim').value);f.set('F_speed',$('F_speed_n').value);f.set('F_phase',$('F_phase_n').value);f.set('F_width',$('F_width_n').value);f.set('F_branch',$('F_branch').checked?'1':'0');f.set('F_invert',$('F_invert').checked?'1':'0');
       }
       const r=await fetch('/api/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:String(f)});$('status').textContent=await r.text()||'applied';setTimeout(()=>$('status').textContent='\u00a0',1600);} 
-    document.addEventListener('input',e=>{if(e.target && ['L_anim','F_anim','L_speed','F_speed','L_speed_n','F_speed_n','L_phase','F_phase','L_phase_n','F_phase_n','L_width','F_width','L_width_n','F_width_n','L_branch','F_branch','L_invert','F_invert'].includes(e.target.id)) updateDiffs();});
+  document.addEventListener('input',e=>{if(e.target && ['L_anim','F_anim','L_speed','F_speed','L_speed_n','F_speed_n','L_phase','F_phase','L_phase_n','F_phase_n','L_width','F_width','L_width_n','F_width_n','L_branch','F_branch','L_invert','F_invert'].includes(e.target.id)) updateDiffs();});
+  document.addEventListener('change',e=>{if(e.target && ['L_anim','F_anim'].includes(e.target.id)) updateDiffs();});
     document.querySelectorAll('.sync-btn').forEach(btn=>btn.addEventListener('click',()=>{const field=btn.dataset.field;const side=btn.dataset.side;const map={anim:['L_anim','F_anim'],speed:['L_speed','F_speed','L_speed_n','F_speed_n'],phase:['L_phase','F_phase','L_phase_n','F_phase_n'],width:['L_width','F_width','L_width_n','F_width_n'],branch:['L_branch','F_branch'],invert:['L_invert','F_invert']};const arr=map[field];if(!arr) return;const leaderFirst=side==='leader';function copy(srcPrefix,dstPrefix){arr.forEach(id=>{if(id.startsWith(srcPrefix)) {const other=id.replace(srcPrefix,dstPrefix);const src=$(id);const dst=$(other); if(!src||!dst)return; if(src.type==='checkbox'){dst.checked=src.checked;} else {dst.value=src.value;} });}
       if(side==='leader'){copy('L_','F_');} else {copy('F_','L_');}
       updateDiffs();}));
