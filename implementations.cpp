@@ -5,6 +5,14 @@
 #include "interfaces.h"
 #include "protocol.h"
 
+// I2C pin configuration
+#ifndef SDA_PIN
+#define SDA_PIN 5
+#endif
+#ifndef SCL_PIN
+#define SCL_PIN 6
+#endif
+
 // Heltec Radio events structure instance (required by library)
 static RadioEvents_t RadioEvents;
 
@@ -18,11 +26,11 @@ class ArduinoTime : public TimeInterface {
 // ----- LEDs (PCA9685) -----
 class Pca9685LEDs : public LEDInterface {
  public:
-  explicit Pca9685LEDs(uint8_t addr1 = 0x40, uint8_t addr2 = 0x41, bool useSecond = true)
+  explicit Pca9685LEDs(uint8_t addr1 = 0x40, uint8_t addr2 = 0x60, bool useSecond = true)
       : _pwm1(addr1), _pwm2(addr2), _useSecond(useSecond) {}
   void begin() override {
     // Initialize I2C on specified pins (user requirement: SDA=5, SCL=6, 400kHz)
-    Wire.begin(5, 6, 400000); // SDA, SCL, Frequency
+  Wire.begin(SDA_PIN, SCL_PIN, 400000); // SDA, SCL, Frequency
     _pwm1.begin();
     _pwm1.setPWMFreq(1600); // maximum PWM frequency per PCA9685 datasheet / library
     if (_useSecond) {
@@ -232,5 +240,5 @@ HeltecLoRa* HeltecLoRa::instance_ = nullptr;
 
 // Factories to expose in sketch
 CommunicationInterface* createCommunication() { return new HeltecLoRa(); }
-LEDInterface* createLEDs() { return new Pca9685LEDs(0x40, 0x41, true); }
+LEDInterface* createLEDs() { return new Pca9685LEDs(0x40, 0x60, true); }
 TimeInterface* createTimeIf() { return new ArduinoTime(); }
