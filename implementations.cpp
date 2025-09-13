@@ -4,6 +4,7 @@
 #include <LoRaWan_APP.h>
 #include "interfaces.h"
 #include "protocol.h"
+#include "node_config.h"
 
 // I2C pin configuration
 #ifndef SDA_PIN
@@ -49,21 +50,36 @@ class Pca9685LEDs : public LEDInterface {
     for (size_t i = 0; i < count; ++i) {
       float v = constrain(values[i] * _global, 0.0f, 1.0f);
       uint16_t pwm = (uint16_t)(v * 4095.0f);
-      if (i < 16) {
-        _pwm1.setPWM((uint8_t)i, 0, pwm);
+      // Map logical LED index to physical PWM channel; negative => disabled
+      int16_t phys = (int16_t)i;
+#ifdef LED_CHANNEL_COUNT
+      if (i < LED_CHANNEL_COUNT) {
+        phys = LED_CHANNEL_MAP[i];
+      }
+#endif
+      if (phys < 0) {
+        continue; // disabled channel
+      }
+      if (phys < 16) {
+        _pwm1.setPWM((uint8_t)phys, 0, pwm);
   // Serial.print('1');
   // Serial.print(i);
   // Serial.print(':');
   // Serial.print(pwm);
   // Serial.print(' ');
 
-      } else if (_useSecond) {
-        _pwm2.setPWM((uint8_t)(i - 16), 0, pwm);
+      } else if (_useSecond && phys < 32) {
+        _pwm2.setPWM((uint8_t)(phys - 16), 0, pwm);
   // Serial.print('2');
   // Serial.print((uint8_t)(i - 16));
   // Serial.print(':');
   // Serial.print(pwm);
   // Serial.print(' ');
+      }
+      else{
+        Serial.print("Warning: LED index ");
+        Serial.print(i);
+        Serial.println(" out of range!");
       }
     }
     // Serial.println();
