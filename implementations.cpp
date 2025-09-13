@@ -121,7 +121,13 @@ class HeltecLoRa : public CommunicationInterface {
     p.role = role;
     p.animIndex = animIndex;
     p.width = width;
-    p.flags = (branchMode ? 0x01 : 0x00) | (invert ? 0x02 : 0x00);
+    if (animIndex == 4) {
+      // Encode single LED index into upper bits of flags (bits2-7)
+      uint8_t idx = width & 0x3F; // 0..63
+      p.flags = (idx << Proto::FLAG_SINGLE_SHIFT);
+    } else {
+      p.flags = (branchMode ? Proto::FLAG_BRANCH : 0) | (invert ? Proto::FLAG_INVERT : 0);
+    }
     p.speed = speed;
     p.phase = phase;
     p.globalSpeed = globalSpeed;
@@ -168,8 +174,15 @@ class HeltecLoRa : public CommunicationInterface {
   outMsg.type = Message::CFG;
   outMsg.cfg_role = p->role;
   outMsg.cfg_animIndex = p->animIndex;
-  outMsg.cfg_width = p->width;
-  outMsg.cfg_flags = p->flags;
+  if (p->animIndex == 4) {
+    // Extract single LED index from flags bits2-7
+    uint8_t raw = (p->flags >> Proto::FLAG_SINGLE_SHIFT) & 0x3F;
+    outMsg.cfg_width = raw; // reuse width field in message for LED index
+    outMsg.cfg_flags = 0;   // branch/invert not applicable for single
+  } else {
+    outMsg.cfg_width = p->width;
+    outMsg.cfg_flags = p->flags;
+  }
   outMsg.cfg_speed = p->speed;
   outMsg.cfg_phase = p->phase;
   outMsg.cfg_globalSpeed = p->globalSpeed;

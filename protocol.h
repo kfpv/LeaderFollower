@@ -8,6 +8,14 @@ static constexpr uint8_t MSG_BRIGHTNESS = 0x03;
 static constexpr uint8_t MSG_ACK = 0x04;
 static constexpr uint8_t MSG_CFG = 0x05;
 
+// Flag bits inside CfgPacket.flags
+// bit0: branchMode (non-single animations)
+// bit1: invert (non-single animations)
+// bits2-7: single LED index (when animIndex == 4 single animation). 0..63 supported.
+static constexpr uint8_t FLAG_BRANCH    = 0x01;
+static constexpr uint8_t FLAG_INVERT    = 0x02;
+static constexpr uint8_t FLAG_SINGLE_SHIFT = 2; // store index starting at bit2
+
 // Layout: type(1) | time_ms(4) | frame(4) | anim_code(2) | pad(1)=0
 // total 12 bytes
 struct SyncPacket {
@@ -40,7 +48,7 @@ struct CfgPacket {
   uint8_t role{0}; // 0=leader,1=follower
   uint8_t animIndex{0};
   uint8_t width{0};
-  uint8_t flags{0}; // bit0: branchMode, bit1: invert
+  uint8_t flags{0}; // see flag layout above
   float speed{0.0f};
   float phase{0.0f};
   float globalSpeed{1.0f};
