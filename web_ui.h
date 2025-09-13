@@ -44,6 +44,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     .navlink.active{background:var(--accent1);border-color:var(--accent1);color:#fff}
     .navlink.disabled{opacity:.5;pointer-events:none}
     .hamburger{display:none;background:#1b2030;border:1px solid var(--outline);color:var(--text);border-radius:8px;padding:8px 10px;font-size:16px}
+  #syncFollower{display:none;background:var(--accent2);border:1px solid var(--accent2);color:#001018;font:600 12px system-ui;padding:8px 10px;border-radius:8px;cursor:pointer}
+  #syncFollower:active{transform:translateY(1px)}
     @media (max-width:700px){
       .hamburger{display:block; margin-left: auto;}
     .navlinks{position:absolute;top:54px;right:12px;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--outline);border-radius:12px;padding:10px;display:none;z-index:9999}
@@ -80,12 +82,13 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <header>
     <div class="nav">
       <h1>Vivid Controls</h1>
-      <nav class="navlinks">
+  <nav class="navlinks">
         <a href="#" data-mode="normal" class="navlink active">Normal</a>
         <a href="#" data-mode="sequential" class="navlink">Sequential</a>
         <a href="#" data-mode="mapping" class="navlink disabled" title="Not implemented">Mapping</a>
       </nav>
       <button class="hamburger" aria-label="menu" aria-expanded="false">☰</button>
+  <button id="syncFollower" title="Sync follower to leader" aria-label="Sync follower">⟳ Sync</button>
     </div>
   </header>
   <div class="container">
@@ -138,6 +141,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   // Navbar mode switching
   const navlinks=[...document.querySelectorAll('.navlink')];
   const hamburger=document.querySelector('.hamburger');
+  const syncBtn=()=>document.getElementById('syncFollower');
   function setMode(mode){navlinks.forEach(a=>a.classList.toggle('active',a.dataset.mode===mode));document.querySelectorAll('.mode-normal').forEach(el=>el.hidden=(mode!=='normal'));document.querySelectorAll('.mode-seq').forEach(el=>el.hidden=(mode!=='sequential'));document.querySelector('.navlinks').classList.remove('open');hamburger.setAttribute('aria-expanded','false');}
   navlinks.forEach(a=>!a.classList.contains('disabled')&&a.addEventListener('click',e=>{e.preventDefault();setMode(a.dataset.mode);}));
   hamburger.addEventListener('click',()=>{const nl=document.querySelector('.navlinks');const isOpen=nl.classList.toggle('open');hamburger.setAttribute('aria-expanded',String(isOpen));});
@@ -146,9 +150,42 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   function buildGrid(id,onClick){const grid=$(id);grid.innerHTML='';for(let i=0;i<28;i++){const b=document.createElement('button');b.type='button';b.className='dot';b.textContent=i; b.dataset.idx=String(i);b.addEventListener('click',()=>onClick(i,b));grid.appendChild(b);} }
   function selectExclusive(gridId, idx){const grid=$(gridId);[...grid.querySelectorAll('.dot')].forEach(el=>{const on=Number(el.dataset.idx)===idx;el.classList.toggle('on',on);});}
   let L_selected=-1, F_selected=-1;
-  buildGrid('L_ledGrid', (i,btn)=>{L_selected = (L_selected===i)?-1:i; selectExclusive('L_ledGrid', L_selected); if(L_selected===-1){/* none */} if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
-  buildGrid('F_ledGrid', (i,btn)=>{F_selected = (F_selected===i)?-1:i; selectExclusive('F_ledGrid', F_selected); if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
-    async function load(){try{const r=await fetch('/api/state');const s=await r.json();$('globalSpeed').value=$('globalSpeed_n').value=s.globalSpeed;$('globalMin').value=$('globalMin_n').value=s.globalMin;$('globalMax').value=$('globalMax_n').value=s.globalMax;$('L_anim').value=s.leader.animIndex;$('L_speed').value=$('L_speed_n').value=s.leader.speed;$('L_phase').value=$('L_phase_n').value=s.leader.phase;$('L_width').value=$('L_width_n').value=s.leader.width;$('L_branch').checked=s.leader.branchMode;$('L_invert').checked=s.leader.invert;$('F_anim').value=s.follower.animIndex;$('F_speed').value=$('F_speed_n').value=s.follower.speed;$('F_phase').value=$('F_phase_n').value=s.follower.phase;$('F_width').value=$('F_width_n').value=s.follower.width;$('F_branch').checked=s.follower.branchMode;$('F_invert').checked=s.follower.invert; L_selected=-1;F_selected=-1; selectExclusive('L_ledGrid',-1); selectExclusive('F_ledGrid',-1);}catch(e){console.error(e);}}
+  buildGrid('L_ledGrid', (i,btn)=>{L_selected = (L_selected===i)?-1:i; selectExclusive('L_ledGrid', L_selected); checkSyncNeeded(); if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
+  buildGrid('F_ledGrid', (i,btn)=>{F_selected = (F_selected===i)?-1:i; selectExclusive('F_ledGrid', F_selected); checkSyncNeeded(); if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
+  function getLeaderVals(){return {anim:$('#L_anim').value,speed:$('#L_speed_n').value,phase:$('#L_phase_n').value,width:$('#L_width_n').value,branch:$('#L_branch').checked,invert:$('#L_invert').checked};}
+  function getFollowerVals(){return {anim:$('#F_anim').value,speed:$('#F_speed_n').value,phase:$('#F_phase_n').value,width:$('#F_width_n').value,branch:$('#F_branch').checked,invert:$('#F_invert').checked};}
+  function differs(){const isSeq=document.querySelector('.navlink.active')?.dataset.mode==='sequential'; if(isSeq){return L_selected!==F_selected;} const L=getLeaderVals(),F=getFollowerVals(); return L.anim!==F.anim||L.speed!==F.speed||L.phase!==F.phase||L.width!==F.width||L.branch!==F.branch||L.invert!==F.invert;}
+  function checkSyncNeeded(){const btn=syncBtn(); if(!btn) return; const mobile=window.matchMedia('(max-width:700px)').matches; if(mobile && differs()) btn.style.display='inline-block'; else btn.style.display='none';}
+  ['L_anim','L_speed','L_speed_n','L_phase','L_phase_n','L_width','L_width_n','L_branch','L_invert','F_anim','F_speed','F_speed_n','F_phase','F_phase_n','F_width','F_width_n','F_branch','F_invert'].forEach(id=>{const el=document.getElementById(id); if(el) el.addEventListener('input',checkSyncNeeded);});
+  window.addEventListener('resize',checkSyncNeeded);
+  document.getElementById('syncFollower').addEventListener('click',()=>{
+    // Determine source (active card) and destination (other card)
+    const leaderActive = document.getElementById('leaderCard').classList.contains('active') || !window.matchMedia('(max-width:700px)').matches; // desktop: leader default source if both visible
+    const srcIsLeader = leaderActive;
+    const isSeq = document.querySelector('.navlink.active')?.dataset.mode==='sequential';
+    if(isSeq){
+      if(srcIsLeader){
+        // copy leader selection to follower
+        F_selected = L_selected;
+        selectExclusive('F_ledGrid', F_selected);
+      } else {
+        // copy follower selection to leader
+        L_selected = F_selected;
+        selectExclusive('L_ledGrid', L_selected);
+      }
+    } else {
+      if(srcIsLeader){
+        const L = getLeaderVals();
+        $('#F_anim').value = L.anim; $('#F_speed').value = $('#F_speed_n').value = L.speed; $('#F_phase').value = $('#F_phase_n').value = L.phase; $('#F_width').value = $('#F_width_n').value = L.width; $('#F_branch').checked = L.branch; $('#F_invert').checked = L.invert;
+      } else {
+        const F = getFollowerVals();
+        $('#L_anim').value = F.anim; $('#L_speed').value = $('#L_speed_n').value = F.speed; $('#L_phase').value = $('#L_phase_n').value = F.phase; $('#L_width').value = $('#L_width_n').value = F.width; $('#L_branch').checked = F.branch; $('#L_invert').checked = F.invert;
+      }
+    }
+    // Do NOT auto-submit to device; user can hit Write Settings
+    checkSyncNeeded();
+  });
+  async function load(){try{const r=await fetch('/api/state');const s=await r.json();$('globalSpeed').value=$('globalSpeed_n').value=s.globalSpeed;$('globalMin').value=$('globalMin_n').value=s.globalMin;$('globalMax').value=$('globalMax_n').value=s.globalMax;$('L_anim').value=s.leader.animIndex;$('L_speed').value=$('L_speed_n').value=s.leader.speed;$('L_phase').value=$('L_phase_n').value=s.leader.phase;$('L_width').value=$('L_width_n').value=s.leader.width;$('L_branch').checked=s.leader.branchMode;$('L_invert').checked=s.leader.invert;$('F_anim').value=s.follower.animIndex;$('F_speed').value=$('F_speed_n').value=s.follower.speed;$('F_phase').value=$('F_phase_n').value=s.follower.phase;$('F_width').value=$('F_width_n').value=s.follower.width;$('F_branch').checked=s.follower.branchMode;$('F_invert').checked=s.follower.invert; L_selected=-1;F_selected=-1; selectExclusive('L_ledGrid',-1); selectExclusive('F_ledGrid',-1); checkSyncNeeded();}catch(e){console.error(e);}}
     async function apply(){const f=new URLSearchParams();f.set('globalSpeed',$('globalSpeed_n').value);f.set('globalMin',$('globalMin_n').value);f.set('globalMax',$('globalMax_n').value);
       // Determine per side whether sequential is active and pack into fields
       const isSeq = document.querySelector('.navlink.active')?.dataset.mode==='sequential';
@@ -164,7 +201,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         f.set('F_anim',$('F_anim').value);f.set('F_speed',$('F_speed_n').value);f.set('F_phase',$('F_phase_n').value);f.set('F_width',$('F_width_n').value);f.set('F_branch',$('F_branch').checked?'1':'0');f.set('F_invert',$('F_invert').checked?'1':'0');
       }
       const r=await fetch('/api/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:String(f)});$('status').textContent=await r.text()||'applied';setTimeout(()=>$('status').textContent='\u00a0',1600);} 
-    $('apply')?.addEventListener('click',apply);initTabs();setMode('normal');load();
+  $('apply')?.addEventListener('click',apply);initTabs();setMode('normal');load();
   </script>
 </body>
 </html>
