@@ -19,10 +19,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.5px}
     .container{max-width:960px;margin:0 auto;padding:18px;display:grid;gap:18px}
     .card{background:var(--panel);border:1px solid var(--outline);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.28);position:relative}
-  .row{display:grid;grid-template-columns:140px 1fr 82px;gap:10px;align-items:center;margin:10px 0}
+    .row{display:grid;grid-template-columns:140px 1fr 82px;gap:10px;align-items:center;margin:10px 0}
     .row label{color:var(--muted);font-size:12px;letter-spacing:.5px;text-transform:uppercase}
-  .row .ctrls{display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
-  .row .ctrls select,.row .ctrls input[type=range]{flex:1}
     input[type=range]{width:100%;margin:0;height:28px;background:transparent}
     input[type=number],select{width:100%;background:#0c0f18;border:1px solid var(--outline);border-radius:9px;color:var(--text);padding:8px 9px;font:13px system-ui}
     input[type=number]:focus,select:focus{outline:2px solid var(--focus);outline-offset:0}
@@ -55,10 +53,6 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     .led-grid{display:grid;grid-template-columns:repeat(7,42px);gap:10px;justify-content:center;padding:10px}
     .dot{width:42px;height:42px;border-radius:50%;border:1px solid var(--outline);background:#1a1f2e;color:var(--muted);cursor:pointer;font:600 12px system-ui}
     .dot.on{background:var(--accent2);color:#001018;border-color:var(--accent2)}
-  /* Sync buttons (mobile) */
-  .sync-btn{display:none;background:#243046;border:1px solid var(--outline);color:var(--muted);font:600 11px system-ui;padding:4px 6px;border-radius:6px;cursor:pointer;letter-spacing:.5px;line-height:1}
-  .row.diff .sync-btn.show{display:inline-block}
-  @media (min-width:701px){ .sync-btn{display:none !important} }
     @media (max-width:860px){
       .row{grid-template-columns:120px 1fr 70px}
     }
@@ -108,12 +102,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       <div class="card active" id="leaderCard">
         <div class="pill">Leader</div>
         <div class="mode-normal">
-          <div class="row" data-field="anim"><label>Type</label><div class="ctrls"><select id="L_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select></div><button type="button" class="sync-btn" data-side="leader" data-field="anim">sync</button></div>
-          <div class="row" data-field="speed"><label>Speed</label><div class="ctrls"><input id="L_speed" type="range" min="0" max="12" step="0.01"><input id="L_speed_n" type="number" min="0" max="12" step="0.01"></div><button type="button" class="sync-btn" data-side="leader" data-field="speed">sync</button></div>
-          <div class="row" data-field="phase"><label>Phase</label><div class="ctrls"><input id="L_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="L_phase_n" type="number" min="-6.283" max="6.283" step="0.001"></div><button type="button" class="sync-btn" data-side="leader" data-field="phase">sync</button></div>
-          <div class="row" data-field="width"><label>Width</label><div class="ctrls"><input id="L_width" type="range" min="1" max="8" step="1"><input id="L_width_n" type="number" min="1" max="8" step="1"></div><button type="button" class="sync-btn" data-side="leader" data-field="width">sync</button></div>
-          <div class="row" data-field="branch"><label>Branch mode</label><div class="ctrls switch"><input id="L_branch" type="checkbox"><span>per-branch</span></div><button type="button" class="sync-btn" data-side="leader" data-field="branch">sync</button></div>
-          <div class="row" data-field="invert"><label>Invert</label><div class="ctrls switch"><input id="L_invert" type="checkbox"><span>reverse</span></div><button type="button" class="sync-btn" data-side="leader" data-field="invert">sync</button></div>
+          <div class="row"><label>Type</label><select id="L_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select><span></span></div>
+          <div class="row"><label>Speed</label><input id="L_speed" type="range" min="0" max="12" step="0.01"><input id="L_speed_n" type="number" min="0" max="12" step="0.01"></div>
+          <div class="row"><label>Phase</label><input id="L_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="L_phase_n" type="number" min="-6.283" max="6.283" step="0.001"></div>
+          <div class="row"><label>Width</label><input id="L_width" type="range" min="1" max="8" step="1"><input id="L_width_n" type="number" min="1" max="8" step="1"></div>
+          <div class="row"><label>Branch mode</label><div class="switch"><input id="L_branch" type="checkbox"><span>per-branch</span></div><span></span></div>
+          <div class="row"><label>Invert</label><div class="switch"><input id="L_invert" type="checkbox"><span>reverse</span></div><span></span></div>
         </div>
         <div class="mode-seq" hidden>
           <div class="led-grid" id="L_ledGrid"></div>
@@ -122,12 +116,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       <div class="card" id="followerCard">
         <div class="pill">Follower</div>
         <div class="mode-normal">
-          <div class="row" data-field="anim"><label>Type</label><div class="ctrls"><select id="F_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select></div><button type="button" class="sync-btn" data-side="follower" data-field="anim">sync</button></div>
-          <div class="row" data-field="speed"><label>Speed</label><div class="ctrls"><input id="F_speed" type="range" min="0" max="12" step="0.01"><input id="F_speed_n" type="number" min="0" max="12" step="0.01"></div><button type="button" class="sync-btn" data-side="follower" data-field="speed">sync</button></div>
-          <div class="row" data-field="phase"><label>Phase</label><div class="ctrls"><input id="F_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="F_phase_n" type="number" min="-6.283" max="6.283" step="0.001"></div><button type="button" class="sync-btn" data-side="follower" data-field="phase">sync</button></div>
-          <div class="row" data-field="width"><label>Width</label><div class="ctrls"><input id="F_width" type="range" min="1" max="8" step="1"><input id="F_width_n" type="number" min="1" max="8" step="1"></div><button type="button" class="sync-btn" data-side="follower" data-field="width">sync</button></div>
-          <div class="row" data-field="branch"><label>Branch mode</label><div class="ctrls switch"><input id="F_branch" type="checkbox"><span>per-branch</span></div><button type="button" class="sync-btn" data-side="follower" data-field="branch">sync</button></div>
-          <div class="row" data-field="invert"><label>Invert</label><div class="ctrls switch"><input id="F_invert" type="checkbox"><span>reverse</span></div><button type="button" class="sync-btn" data-side="follower" data-field="invert">sync</button></div>
+          <div class="row"><label>Type</label><select id="F_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select><span></span></div>
+          <div class="row"><label>Speed</label><input id="F_speed" type="range" min="0" max="12" step="0.01"><input id="F_speed_n" type="number" min="0" max="12" step="0.01"></div>
+          <div class="row"><label>Phase</label><input id="F_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="F_phase_n" type="number" min="-6.283" max="6.283" step="0.001"></div>
+          <div class="row"><label>Width</label><input id="F_width" type="range" min="1" max="8" step="1"><input id="F_width_n" type="number" min="1" max="8" step="1"></div>
+          <div class="row"><label>Branch mode</label><div class="switch"><input id="F_branch" type="checkbox"><span>per-branch</span></div><span></span></div>
+          <div class="row"><label>Invert</label><div class="switch"><input id="F_invert" type="checkbox"><span>reverse</span></div><span></span></div>
         </div>
         <div class="mode-seq" hidden>
           <div class="led-grid" id="F_ledGrid"></div>
@@ -154,28 +148,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   let L_selected=-1, F_selected=-1;
   buildGrid('L_ledGrid', (i,btn)=>{L_selected = (L_selected===i)?-1:i; selectExclusive('L_ledGrid', L_selected); if(L_selected===-1){/* none */} if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
   buildGrid('F_ledGrid', (i,btn)=>{F_selected = (F_selected===i)?-1:i; selectExclusive('F_ledGrid', F_selected); if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
-    function getVal(id){const el=$(id);if(!el) return null; if(el.type==='checkbox') return el.checked?1:0; if(el.type==='number' || el.type==='range') return parseFloat(el.value); return el.value;}
-    function updateDiffs(){
-      const fields=[
-        {f:'anim', l:'L_anim', r:'F_anim'},
-        {f:'speed', l:'L_speed_n', r:'F_speed_n'},
-        {f:'phase', l:'L_phase_n', r:'F_phase_n'},
-        {f:'width', l:'L_width_n', r:'F_width_n'},
-        {f:'branch', l:'L_branch', r:'F_branch'},
-        {f:'invert', l:'L_invert', r:'F_invert'}
-      ];
-      fields.forEach(d=>{
-        const lv=getVal(d.l);
-        const rv=getVal(d.r);
-        const diff=(lv!==rv && !(isNaN(lv)&&isNaN(rv)));
-        document.querySelectorAll('.row[data-field="'+d.f+'"]').forEach(row=>{
-          row.classList.toggle('diff',diff);
-          const btn=row.querySelector('.sync-btn');
-          if(btn) btn.classList.toggle('show',diff);
-        });
-      });
-    }
-  async function load(){try{const r=await fetch('/api/state');const s=await r.json();$('globalSpeed').value=$('globalSpeed_n').value=s.globalSpeed;$('globalMin').value=$('globalMin_n').value=s.globalMin;$('globalMax').value=$('globalMax_n').value=s.globalMax;$('L_anim').value=s.leader.animIndex;$('L_speed').value=$('L_speed_n').value=s.leader.speed;$('L_phase').value=$('L_phase_n').value=s.leader.phase;$('L_width').value=$('L_width_n').value=s.leader.width;$('L_branch').checked=s.leader.branchMode;$('L_invert').checked=s.leader.invert;$('F_anim').value=s.follower.animIndex;$('F_speed').value=$('F_speed_n').value=s.follower.speed;$('F_phase').value=$('F_phase_n').value=s.follower.phase;$('F_width').value=$('F_width_n').value=s.follower.width;$('F_branch').checked=s.follower.branchMode;$('F_invert').checked=s.follower.invert; L_selected=-1;F_selected=-1; selectExclusive('L_ledGrid',-1); selectExclusive('F_ledGrid',-1); updateDiffs();}catch(e){console.error(e);}}
+    async function load(){try{const r=await fetch('/api/state');const s=await r.json();$('globalSpeed').value=$('globalSpeed_n').value=s.globalSpeed;$('globalMin').value=$('globalMin_n').value=s.globalMin;$('globalMax').value=$('globalMax_n').value=s.globalMax;$('L_anim').value=s.leader.animIndex;$('L_speed').value=$('L_speed_n').value=s.leader.speed;$('L_phase').value=$('L_phase_n').value=s.leader.phase;$('L_width').value=$('L_width_n').value=s.leader.width;$('L_branch').checked=s.leader.branchMode;$('L_invert').checked=s.leader.invert;$('F_anim').value=s.follower.animIndex;$('F_speed').value=$('F_speed_n').value=s.follower.speed;$('F_phase').value=$('F_phase_n').value=s.follower.phase;$('F_width').value=$('F_width_n').value=s.follower.width;$('F_branch').checked=s.follower.branchMode;$('F_invert').checked=s.follower.invert; L_selected=-1;F_selected=-1; selectExclusive('L_ledGrid',-1); selectExclusive('F_ledGrid',-1);}catch(e){console.error(e);}}
     async function apply(){const f=new URLSearchParams();f.set('globalSpeed',$('globalSpeed_n').value);f.set('globalMin',$('globalMin_n').value);f.set('globalMax',$('globalMax_n').value);
       // Determine per side whether sequential is active and pack into fields
       const isSeq = document.querySelector('.navlink.active')?.dataset.mode==='sequential';
@@ -191,11 +164,6 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         f.set('F_anim',$('F_anim').value);f.set('F_speed',$('F_speed_n').value);f.set('F_phase',$('F_phase_n').value);f.set('F_width',$('F_width_n').value);f.set('F_branch',$('F_branch').checked?'1':'0');f.set('F_invert',$('F_invert').checked?'1':'0');
       }
       const r=await fetch('/api/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:String(f)});$('status').textContent=await r.text()||'applied';setTimeout(()=>$('status').textContent='\u00a0',1600);} 
-  document.addEventListener('input',e=>{if(e.target && ['L_anim','F_anim','L_speed','F_speed','L_speed_n','F_speed_n','L_phase','F_phase','L_phase_n','F_phase_n','L_width','F_width','L_width_n','F_width_n','L_branch','F_branch','L_invert','F_invert'].includes(e.target.id)) updateDiffs();});
-  document.addEventListener('change',e=>{if(e.target && ['L_anim','F_anim'].includes(e.target.id)) updateDiffs();});
-    document.querySelectorAll('.sync-btn').forEach(btn=>btn.addEventListener('click',()=>{const field=btn.dataset.field;const side=btn.dataset.side;const map={anim:['L_anim','F_anim'],speed:['L_speed','F_speed','L_speed_n','F_speed_n'],phase:['L_phase','F_phase','L_phase_n','F_phase_n'],width:['L_width','F_width','L_width_n','F_width_n'],branch:['L_branch','F_branch'],invert:['L_invert','F_invert']};const arr=map[field];if(!arr) return;const leaderFirst=side==='leader';function copy(srcPrefix,dstPrefix){arr.forEach(id=>{if(id.startsWith(srcPrefix)) {const other=id.replace(srcPrefix,dstPrefix);const src=$(id);const dst=$(other); if(!src||!dst)return; if(src.type==='checkbox'){dst.checked=src.checked;} else {dst.value=src.value;} });}
-      if(side==='leader'){copy('L_','F_');} else {copy('F_','L_');}
-      updateDiffs();}));
     $('apply')?.addEventListener('click',apply);initTabs();setMode('normal');load();
   </script>
 </body>
