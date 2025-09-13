@@ -66,4 +66,10 @@ inline void chase(float t, uint16_t n, float speed, uint8_t width, bool branchMo
     for (uint8_t w = 0; w < width; ++w) out[(pos + w) % n] = 1.0f;
   }
 }
+
+// Turn on a single LED (index 0..n-1), others off
+inline void single(float /*t*/, uint16_t n, uint16_t index, float *out) {
+  for (uint16_t i = 0; i < n; ++i) out[i] = 0.0f;
+  if (index < n) out[index] = 1.0f;
+}
 }

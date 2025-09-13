@@ -48,7 +48,7 @@ struct Node {
   } leaderCfg, followerCfg;
   float globalSpeed{1.0f};
   float globalMin{0.0f}; // 0..1
-  float globalMax{1.0f}; // 0..1
+  float globalMax{0.1f}; // 0..1
 
 #if defined(ARDUINO_ARCH_ESP32)
   // Web UI (leader only)
@@ -233,6 +233,9 @@ struct Node {
         break;
       case 3: // chase
         Anim::chase(t, Anim::TOTAL_LEDS, cfg.speed, cfg.width, cfg.branchMode, out);
+        break;
+      case 4: // single LED (index in width)
+        Anim::single(t, Anim::TOTAL_LEDS, cfg.width, out);
         break;
       default:
         Anim::wave(t, Anim::TOTAL_LEDS, cfg.speed, cfg.phase, cfg.branchMode, cfg.invert, out);

@@ -5,6 +5,7 @@
 #include "interfaces.h"
 #include "protocol.h"
 #include "node_config.h"
+#include "led_channel_inverse.h"
 
 // I2C pin configuration
 #ifndef SDA_PIN
@@ -34,11 +35,13 @@ class Pca9685LEDs : public LEDInterface {
   Wire.begin(SDA_PIN, SCL_PIN, 400000); // SDA, SCL, Frequency
     _pwm1.begin();
     _pwm1.setPWMFreq(1600); // maximum PWM frequency per PCA9685 datasheet / library
+    for(int i=0; i<16; ++i) _pwm1.setPWM(i, 0, 0); // turn off all channels
     if (_useSecond) {
       _pwm2.begin();
       _pwm2.setPWMFreq(1600);
+      for(int i=0; i<16; ++i) _pwm2.setPWM(i, 0, 0); // turn off all channels
     }
-    setBrightness(1.0f);
+    setBrightness(0.1f);
   }
   void setBrightness(float b) override { _global = constrain(b, 0.0f, 1.0f); }
   void setLEDs(const float *values, size_t count) override {
@@ -47,39 +50,15 @@ class Pca9685LEDs : public LEDInterface {
     // Serial.print("  ");
 
     // Map first 16 channels to addr1, remaining to addr2
-    for (size_t i = 0; i < count; ++i) {
-      float v = constrain(values[i] * _global, 0.0f, 1.0f);
+    for (size_t logical = 0; logical < count && logical < LED_CHANNEL_COUNT; ++logical) {
+      int16_t phys = LED_CHANNEL_INV[logical];
+      if (phys < 0) continue; // logical LED not connected
+      float v = constrain(values[logical] * _global, 0.0f, 1.0f);
       uint16_t pwm = (uint16_t)(v * 4095.0f);
-      // Map logical LED index to physical PWM channel; negative => disabled
-      int16_t phys = (int16_t)i;
-#ifdef LED_CHANNEL_COUNT
-      if (i < LED_CHANNEL_COUNT) {
-        phys = LED_CHANNEL_MAP[i];
-      }
-#endif
-      if (phys < 0) {
-        continue; // disabled channel
-      }
       if (phys < 16) {
         _pwm1.setPWM((uint8_t)phys, 0, pwm);
-  // Serial.print('1');
-  // Serial.print(i);
-  // Serial.print(':');
-  // Serial.print(pwm);
-  // Serial.print(' ');
-
       } else if (_useSecond && phys < 32) {
         _pwm2.setPWM((uint8_t)(phys - 16), 0, pwm);
-  // Serial.print('2');
-  // Serial.print((uint8_t)(i - 16));
-  // Serial.print(':');
-  // Serial.print(pwm);
-  // Serial.print(' ');
-      }
-      else{
-        Serial.print("Warning: LED index ");
-        Serial.print(i);
-        Serial.println(" out of range!");
       }
     }
     // Serial.println();
