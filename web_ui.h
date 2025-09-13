@@ -21,6 +21,8 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     .card{background:var(--panel);border:1px solid var(--outline);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.28);position:relative}
   .row{display:grid;grid-template-columns:140px 1fr 82px;gap:10px;align-items:center;margin:10px 0}
     .row label{color:var(--muted);font-size:12px;letter-spacing:.5px;text-transform:uppercase}
+  .row .ctrls{display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
+  .row .ctrls select,.row .ctrls input[type=range]{flex:1}
     input[type=range]{width:100%;margin:0;height:28px;background:transparent}
     input[type=number],select{width:100%;background:#0c0f18;border:1px solid var(--outline);border-radius:9px;color:var(--text);padding:8px 9px;font:13px system-ui}
     input[type=number]:focus,select:focus{outline:2px solid var(--focus);outline-offset:0}
@@ -106,12 +108,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       <div class="card active" id="leaderCard">
         <div class="pill">Leader</div>
         <div class="mode-normal">
-          <div class="row" data-field="anim"><label>Type</label><select id="L_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select><span><button type="button" class="sync-btn" data-side="leader" data-field="anim">sync</button></span></div>
-          <div class="row" data-field="speed"><label>Speed</label><input id="L_speed" type="range" min="0" max="12" step="0.01"><input id="L_speed_n" type="number" min="0" max="12" step="0.01"><button type="button" class="sync-btn" data-side="leader" data-field="speed">sync</button></div>
-          <div class="row" data-field="phase"><label>Phase</label><input id="L_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="L_phase_n" type="number" min="-6.283" max="6.283" step="0.001"><button type="button" class="sync-btn" data-side="leader" data-field="phase">sync</button></div>
-          <div class="row" data-field="width"><label>Width</label><input id="L_width" type="range" min="1" max="8" step="1"><input id="L_width_n" type="number" min="1" max="8" step="1"><button type="button" class="sync-btn" data-side="leader" data-field="width">sync</button></div>
-          <div class="row" data-field="branch"><label>Branch mode</label><div class="switch"><input id="L_branch" type="checkbox"><span>per-branch</span></div><span><button type="button" class="sync-btn" data-side="leader" data-field="branch">sync</button></span></div>
-          <div class="row" data-field="invert"><label>Invert</label><div class="switch"><input id="L_invert" type="checkbox"><span>reverse</span></div><span><button type="button" class="sync-btn" data-side="leader" data-field="invert">sync</button></span></div>
+          <div class="row" data-field="anim"><label>Type</label><div class="ctrls"><select id="L_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select></div><button type="button" class="sync-btn" data-side="leader" data-field="anim">sync</button></div>
+          <div class="row" data-field="speed"><label>Speed</label><div class="ctrls"><input id="L_speed" type="range" min="0" max="12" step="0.01"><input id="L_speed_n" type="number" min="0" max="12" step="0.01"></div><button type="button" class="sync-btn" data-side="leader" data-field="speed">sync</button></div>
+          <div class="row" data-field="phase"><label>Phase</label><div class="ctrls"><input id="L_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="L_phase_n" type="number" min="-6.283" max="6.283" step="0.001"></div><button type="button" class="sync-btn" data-side="leader" data-field="phase">sync</button></div>
+          <div class="row" data-field="width"><label>Width</label><div class="ctrls"><input id="L_width" type="range" min="1" max="8" step="1"><input id="L_width_n" type="number" min="1" max="8" step="1"></div><button type="button" class="sync-btn" data-side="leader" data-field="width">sync</button></div>
+          <div class="row" data-field="branch"><label>Branch mode</label><div class="ctrls switch"><input id="L_branch" type="checkbox"><span>per-branch</span></div><button type="button" class="sync-btn" data-side="leader" data-field="branch">sync</button></div>
+          <div class="row" data-field="invert"><label>Invert</label><div class="ctrls switch"><input id="L_invert" type="checkbox"><span>reverse</span></div><button type="button" class="sync-btn" data-side="leader" data-field="invert">sync</button></div>
         </div>
         <div class="mode-seq" hidden>
           <div class="led-grid" id="L_ledGrid"></div>
@@ -120,12 +122,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       <div class="card" id="followerCard">
         <div class="pill">Follower</div>
         <div class="mode-normal">
-          <div class="row" data-field="anim"><label>Type</label><select id="F_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select><span><button type="button" class="sync-btn" data-side="follower" data-field="anim">sync</button></span></div>
-          <div class="row" data-field="speed"><label>Speed</label><input id="F_speed" type="range" min="0" max="12" step="0.01"><input id="F_speed_n" type="number" min="0" max="12" step="0.01"><button type="button" class="sync-btn" data-side="follower" data-field="speed">sync</button></div>
-          <div class="row" data-field="phase"><label>Phase</label><input id="F_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="F_phase_n" type="number" min="-6.283" max="6.283" step="0.001"><button type="button" class="sync-btn" data-side="follower" data-field="phase">sync</button></div>
-          <div class="row" data-field="width"><label>Width</label><input id="F_width" type="range" min="1" max="8" step="1"><input id="F_width_n" type="number" min="1" max="8" step="1"><button type="button" class="sync-btn" data-side="follower" data-field="width">sync</button></div>
-          <div class="row" data-field="branch"><label>Branch mode</label><div class="switch"><input id="F_branch" type="checkbox"><span>per-branch</span></div><span><button type="button" class="sync-btn" data-side="follower" data-field="branch">sync</button></span></div>
-          <div class="row" data-field="invert"><label>Invert</label><div class="switch"><input id="F_invert" type="checkbox"><span>reverse</span></div><span><button type="button" class="sync-btn" data-side="follower" data-field="invert">sync</button></span></div>
+          <div class="row" data-field="anim"><label>Type</label><div class="ctrls"><select id="F_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select></div><button type="button" class="sync-btn" data-side="follower" data-field="anim">sync</button></div>
+          <div class="row" data-field="speed"><label>Speed</label><div class="ctrls"><input id="F_speed" type="range" min="0" max="12" step="0.01"><input id="F_speed_n" type="number" min="0" max="12" step="0.01"></div><button type="button" class="sync-btn" data-side="follower" data-field="speed">sync</button></div>
+          <div class="row" data-field="phase"><label>Phase</label><div class="ctrls"><input id="F_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="F_phase_n" type="number" min="-6.283" max="6.283" step="0.001"></div><button type="button" class="sync-btn" data-side="follower" data-field="phase">sync</button></div>
+          <div class="row" data-field="width"><label>Width</label><div class="ctrls"><input id="F_width" type="range" min="1" max="8" step="1"><input id="F_width_n" type="number" min="1" max="8" step="1"></div><button type="button" class="sync-btn" data-side="follower" data-field="width">sync</button></div>
+          <div class="row" data-field="branch"><label>Branch mode</label><div class="ctrls switch"><input id="F_branch" type="checkbox"><span>per-branch</span></div><button type="button" class="sync-btn" data-side="follower" data-field="branch">sync</button></div>
+          <div class="row" data-field="invert"><label>Invert</label><div class="ctrls switch"><input id="F_invert" type="checkbox"><span>reverse</span></div><button type="button" class="sync-btn" data-side="follower" data-field="invert">sync</button></div>
         </div>
         <div class="mode-seq" hidden>
           <div class="led-grid" id="F_ledGrid"></div>
