@@ -19,7 +19,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.5px}
     .container{max-width:960px;margin:0 auto;padding:18px;display:grid;gap:18px}
     .card{background:var(--panel);border:1px solid var(--outline);border-radius:14px;padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.28);position:relative}
-    .row{display:grid;grid-template-columns:140px 1fr 82px;gap:10px;align-items:center;margin:10px 0}
+  .row{display:grid;grid-template-columns:140px 1fr 82px;gap:10px;align-items:center;margin:10px 0}
     .row label{color:var(--muted);font-size:12px;letter-spacing:.5px;text-transform:uppercase}
     input[type=range]{width:100%;margin:0;height:28px;background:transparent}
     input[type=number],select{width:100%;background:#0c0f18;border:1px solid var(--outline);border-radius:9px;color:var(--text);padding:8px 9px;font:13px system-ui}
@@ -44,8 +44,6 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     .navlink.active{background:var(--accent1);border-color:var(--accent1);color:#fff}
     .navlink.disabled{opacity:.5;pointer-events:none}
     .hamburger{display:none;background:#1b2030;border:1px solid var(--outline);color:var(--text);border-radius:8px;padding:8px 10px;font-size:16px}
-  #syncFollower{display:none;background:var(--accent2);border:1px solid var(--accent2);color:#001018;font:600 12px system-ui;padding:8px 10px;border-radius:8px;cursor:pointer}
-  #syncFollower:active{transform:translateY(1px)}
     @media (max-width:700px){
       .hamburger{display:block; margin-left: auto;}
     .navlinks{position:absolute;top:54px;right:12px;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--outline);border-radius:12px;padding:10px;display:none;z-index:9999}
@@ -55,6 +53,10 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     .led-grid{display:grid;grid-template-columns:repeat(7,42px);gap:10px;justify-content:center;padding:10px}
     .dot{width:42px;height:42px;border-radius:50%;border:1px solid var(--outline);background:#1a1f2e;color:var(--muted);cursor:pointer;font:600 12px system-ui}
     .dot.on{background:var(--accent2);color:#001018;border-color:var(--accent2)}
+  /* Sync buttons (mobile) */
+  .sync-btn{display:none;background:#243046;border:1px solid var(--outline);color:var(--muted);font:600 11px system-ui;padding:4px 6px;border-radius:6px;cursor:pointer;letter-spacing:.5px;line-height:1}
+  .row.diff .sync-btn.show{display:inline-block}
+  @media (min-width:701px){ .sync-btn{display:none !important} }
     @media (max-width:860px){
       .row{grid-template-columns:120px 1fr 70px}
     }
@@ -82,13 +84,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <header>
     <div class="nav">
       <h1>Vivid Controls</h1>
-  <nav class="navlinks">
+      <nav class="navlinks">
         <a href="#" data-mode="normal" class="navlink active">Normal</a>
         <a href="#" data-mode="sequential" class="navlink">Sequential</a>
         <a href="#" data-mode="mapping" class="navlink disabled" title="Not implemented">Mapping</a>
       </nav>
       <button class="hamburger" aria-label="menu" aria-expanded="false">☰</button>
-  <button id="syncFollower" title="Sync follower to leader" aria-label="Sync follower">⟳ Sync</button>
     </div>
   </header>
   <div class="container">
@@ -105,12 +106,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       <div class="card active" id="leaderCard">
         <div class="pill">Leader</div>
         <div class="mode-normal">
-          <div class="row"><label>Type</label><select id="L_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select><span></span></div>
-          <div class="row"><label>Speed</label><input id="L_speed" type="range" min="0" max="12" step="0.01"><input id="L_speed_n" type="number" min="0" max="12" step="0.01"></div>
-          <div class="row"><label>Phase</label><input id="L_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="L_phase_n" type="number" min="-6.283" max="6.283" step="0.001"></div>
-          <div class="row"><label>Width</label><input id="L_width" type="range" min="1" max="8" step="1"><input id="L_width_n" type="number" min="1" max="8" step="1"></div>
-          <div class="row"><label>Branch mode</label><div class="switch"><input id="L_branch" type="checkbox"><span>per-branch</span></div><span></span></div>
-          <div class="row"><label>Invert</label><div class="switch"><input id="L_invert" type="checkbox"><span>reverse</span></div><span></span></div>
+          <div class="row" data-field="anim"><label>Type</label><select id="L_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select><span><button type="button" class="sync-btn" data-side="leader" data-field="anim">sync</button></span></div>
+          <div class="row" data-field="speed"><label>Speed</label><input id="L_speed" type="range" min="0" max="12" step="0.01"><input id="L_speed_n" type="number" min="0" max="12" step="0.01"><button type="button" class="sync-btn" data-side="leader" data-field="speed">sync</button></div>
+          <div class="row" data-field="phase"><label>Phase</label><input id="L_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="L_phase_n" type="number" min="-6.283" max="6.283" step="0.001"><button type="button" class="sync-btn" data-side="leader" data-field="phase">sync</button></div>
+          <div class="row" data-field="width"><label>Width</label><input id="L_width" type="range" min="1" max="8" step="1"><input id="L_width_n" type="number" min="1" max="8" step="1"><button type="button" class="sync-btn" data-side="leader" data-field="width">sync</button></div>
+          <div class="row" data-field="branch"><label>Branch mode</label><div class="switch"><input id="L_branch" type="checkbox"><span>per-branch</span></div><span><button type="button" class="sync-btn" data-side="leader" data-field="branch">sync</button></span></div>
+          <div class="row" data-field="invert"><label>Invert</label><div class="switch"><input id="L_invert" type="checkbox"><span>reverse</span></div><span><button type="button" class="sync-btn" data-side="leader" data-field="invert">sync</button></span></div>
         </div>
         <div class="mode-seq" hidden>
           <div class="led-grid" id="L_ledGrid"></div>
@@ -119,12 +120,12 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
       <div class="card" id="followerCard">
         <div class="pill">Follower</div>
         <div class="mode-normal">
-          <div class="row"><label>Type</label><select id="F_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select><span></span></div>
-          <div class="row"><label>Speed</label><input id="F_speed" type="range" min="0" max="12" step="0.01"><input id="F_speed_n" type="number" min="0" max="12" step="0.01"></div>
-          <div class="row"><label>Phase</label><input id="F_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="F_phase_n" type="number" min="-6.283" max="6.283" step="0.001"></div>
-          <div class="row"><label>Width</label><input id="F_width" type="range" min="1" max="8" step="1"><input id="F_width_n" type="number" min="1" max="8" step="1"></div>
-          <div class="row"><label>Branch mode</label><div class="switch"><input id="F_branch" type="checkbox"><span>per-branch</span></div><span></span></div>
-          <div class="row"><label>Invert</label><div class="switch"><input id="F_invert" type="checkbox"><span>reverse</span></div><span></span></div>
+          <div class="row" data-field="anim"><label>Type</label><select id="F_anim"><option value="0">Static</option><option value="1">Wave</option><option value="2">Pulse</option><option value="3">Chase</option></select><span><button type="button" class="sync-btn" data-side="follower" data-field="anim">sync</button></span></div>
+          <div class="row" data-field="speed"><label>Speed</label><input id="F_speed" type="range" min="0" max="12" step="0.01"><input id="F_speed_n" type="number" min="0" max="12" step="0.01"><button type="button" class="sync-btn" data-side="follower" data-field="speed">sync</button></div>
+          <div class="row" data-field="phase"><label>Phase</label><input id="F_phase" type="range" min="-6.283" max="6.283" step="0.001"><input id="F_phase_n" type="number" min="-6.283" max="6.283" step="0.001"><button type="button" class="sync-btn" data-side="follower" data-field="phase">sync</button></div>
+          <div class="row" data-field="width"><label>Width</label><input id="F_width" type="range" min="1" max="8" step="1"><input id="F_width_n" type="number" min="1" max="8" step="1"><button type="button" class="sync-btn" data-side="follower" data-field="width">sync</button></div>
+          <div class="row" data-field="branch"><label>Branch mode</label><div class="switch"><input id="F_branch" type="checkbox"><span>per-branch</span></div><span><button type="button" class="sync-btn" data-side="follower" data-field="branch">sync</button></span></div>
+          <div class="row" data-field="invert"><label>Invert</label><div class="switch"><input id="F_invert" type="checkbox"><span>reverse</span></div><span><button type="button" class="sync-btn" data-side="follower" data-field="invert">sync</button></span></div>
         </div>
         <div class="mode-seq" hidden>
           <div class="led-grid" id="F_ledGrid"></div>
@@ -141,7 +142,6 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   // Navbar mode switching
   const navlinks=[...document.querySelectorAll('.navlink')];
   const hamburger=document.querySelector('.hamburger');
-  const syncBtn=()=>document.getElementById('syncFollower');
   function setMode(mode){navlinks.forEach(a=>a.classList.toggle('active',a.dataset.mode===mode));document.querySelectorAll('.mode-normal').forEach(el=>el.hidden=(mode!=='normal'));document.querySelectorAll('.mode-seq').forEach(el=>el.hidden=(mode!=='sequential'));document.querySelector('.navlinks').classList.remove('open');hamburger.setAttribute('aria-expanded','false');}
   navlinks.forEach(a=>!a.classList.contains('disabled')&&a.addEventListener('click',e=>{e.preventDefault();setMode(a.dataset.mode);}));
   hamburger.addEventListener('click',()=>{const nl=document.querySelector('.navlinks');const isOpen=nl.classList.toggle('open');hamburger.setAttribute('aria-expanded',String(isOpen));});
@@ -150,42 +150,10 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   function buildGrid(id,onClick){const grid=$(id);grid.innerHTML='';for(let i=0;i<28;i++){const b=document.createElement('button');b.type='button';b.className='dot';b.textContent=i; b.dataset.idx=String(i);b.addEventListener('click',()=>onClick(i,b));grid.appendChild(b);} }
   function selectExclusive(gridId, idx){const grid=$(gridId);[...grid.querySelectorAll('.dot')].forEach(el=>{const on=Number(el.dataset.idx)===idx;el.classList.toggle('on',on);});}
   let L_selected=-1, F_selected=-1;
-  buildGrid('L_ledGrid', (i,btn)=>{L_selected = (L_selected===i)?-1:i; selectExclusive('L_ledGrid', L_selected); checkSyncNeeded(); if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
-  buildGrid('F_ledGrid', (i,btn)=>{F_selected = (F_selected===i)?-1:i; selectExclusive('F_ledGrid', F_selected); checkSyncNeeded(); if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
-  function getLeaderVals(){return {anim:$('#L_anim').value,speed:$('#L_speed_n').value,phase:$('#L_phase_n').value,width:$('#L_width_n').value,branch:$('#L_branch').checked,invert:$('#L_invert').checked};}
-  function getFollowerVals(){return {anim:$('#F_anim').value,speed:$('#F_speed_n').value,phase:$('#F_phase_n').value,width:$('#F_width_n').value,branch:$('#F_branch').checked,invert:$('#F_invert').checked};}
-  function differs(){const isSeq=document.querySelector('.navlink.active')?.dataset.mode==='sequential'; if(isSeq){return L_selected!==F_selected;} const L=getLeaderVals(),F=getFollowerVals(); return L.anim!==F.anim||L.speed!==F.speed||L.phase!==F.phase||L.width!==F.width||L.branch!==F.branch||L.invert!==F.invert;}
-  function checkSyncNeeded(){const btn=syncBtn(); if(!btn) return; const mobile=window.matchMedia('(max-width:700px)').matches; if(mobile && differs()) btn.style.display='inline-block'; else btn.style.display='none';}
-  ['L_anim','L_speed','L_speed_n','L_phase','L_phase_n','L_width','L_width_n','L_branch','L_invert','F_anim','F_speed','F_speed_n','F_phase','F_phase_n','F_width','F_width_n','F_branch','F_invert'].forEach(id=>{const el=document.getElementById(id); if(el) el.addEventListener('input',checkSyncNeeded);});
-  window.addEventListener('resize',checkSyncNeeded);
-  document.getElementById('syncFollower').addEventListener('click',()=>{
-    // Determine source (active card) and destination (other card)
-    const leaderActive = document.getElementById('leaderCard').classList.contains('active') || !window.matchMedia('(max-width:700px)').matches; // desktop: leader default source if both visible
-    const srcIsLeader = leaderActive;
-    const isSeq = document.querySelector('.navlink.active')?.dataset.mode==='sequential';
-    if(isSeq){
-      if(srcIsLeader){
-        // copy leader selection to follower
-        F_selected = L_selected;
-        selectExclusive('F_ledGrid', F_selected);
-      } else {
-        // copy follower selection to leader
-        L_selected = F_selected;
-        selectExclusive('L_ledGrid', L_selected);
-      }
-    } else {
-      if(srcIsLeader){
-        const L = getLeaderVals();
-        $('#F_anim').value = L.anim; $('#F_speed').value = $('#F_speed_n').value = L.speed; $('#F_phase').value = $('#F_phase_n').value = L.phase; $('#F_width').value = $('#F_width_n').value = L.width; $('#F_branch').checked = L.branch; $('#F_invert').checked = L.invert;
-      } else {
-        const F = getFollowerVals();
-        $('#L_anim').value = F.anim; $('#L_speed').value = $('#L_speed_n').value = F.speed; $('#L_phase').value = $('#L_phase_n').value = F.phase; $('#L_width').value = $('#L_width_n').value = F.width; $('#L_branch').checked = F.branch; $('#L_invert').checked = F.invert;
-      }
-    }
-    // Do NOT auto-submit to device; user can hit Write Settings
-    checkSyncNeeded();
-  });
-  async function load(){try{const r=await fetch('/api/state');const s=await r.json();$('globalSpeed').value=$('globalSpeed_n').value=s.globalSpeed;$('globalMin').value=$('globalMin_n').value=s.globalMin;$('globalMax').value=$('globalMax_n').value=s.globalMax;$('L_anim').value=s.leader.animIndex;$('L_speed').value=$('L_speed_n').value=s.leader.speed;$('L_phase').value=$('L_phase_n').value=s.leader.phase;$('L_width').value=$('L_width_n').value=s.leader.width;$('L_branch').checked=s.leader.branchMode;$('L_invert').checked=s.leader.invert;$('F_anim').value=s.follower.animIndex;$('F_speed').value=$('F_speed_n').value=s.follower.speed;$('F_phase').value=$('F_phase_n').value=s.follower.phase;$('F_width').value=$('F_width_n').value=s.follower.width;$('F_branch').checked=s.follower.branchMode;$('F_invert').checked=s.follower.invert; L_selected=-1;F_selected=-1; selectExclusive('L_ledGrid',-1); selectExclusive('F_ledGrid',-1); checkSyncNeeded();}catch(e){console.error(e);}}
+  buildGrid('L_ledGrid', (i,btn)=>{L_selected = (L_selected===i)?-1:i; selectExclusive('L_ledGrid', L_selected); if(L_selected===-1){/* none */} if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
+  buildGrid('F_ledGrid', (i,btn)=>{F_selected = (F_selected===i)?-1:i; selectExclusive('F_ledGrid', F_selected); if(document.querySelector('.navlink.active')?.dataset.mode==='sequential'){apply();}});
+  function updateDiffs(){const pairs=[['anim','L_anim','F_anim',v=>v],['speed','L_speed_n','F_speed_n',parseFloat],['phase','L_phase_n','F_phase_n',parseFloat],['width','L_width_n','F_width_n',parseFloat],['branch','L_branch','F_branch',el=>$(el).checked?1:0],['invert','L_invert','F_invert',el=>$(el).checked?1:0]];pairs.forEach(([field,la,fa,fn])=>{const lv=fn(la);const fv=fn(fa);const diff=(lv!==fv);document.querySelectorAll('.row[data-field="'+field+'" ]').forEach(r=>{r.classList.toggle('diff',diff);const btn=r.querySelector('.sync-btn');if(btn)btn.classList.toggle('show',diff);});});}
+  async function load(){try{const r=await fetch('/api/state');const s=await r.json();$('globalSpeed').value=$('globalSpeed_n').value=s.globalSpeed;$('globalMin').value=$('globalMin_n').value=s.globalMin;$('globalMax').value=$('globalMax_n').value=s.globalMax;$('L_anim').value=s.leader.animIndex;$('L_speed').value=$('L_speed_n').value=s.leader.speed;$('L_phase').value=$('L_phase_n').value=s.leader.phase;$('L_width').value=$('L_width_n').value=s.leader.width;$('L_branch').checked=s.leader.branchMode;$('L_invert').checked=s.leader.invert;$('F_anim').value=s.follower.animIndex;$('F_speed').value=$('F_speed_n').value=s.follower.speed;$('F_phase').value=$('F_phase_n').value=s.follower.phase;$('F_width').value=$('F_width_n').value=s.follower.width;$('F_branch').checked=s.follower.branchMode;$('F_invert').checked=s.follower.invert; L_selected=-1;F_selected=-1; selectExclusive('L_ledGrid',-1); selectExclusive('F_ledGrid',-1); updateDiffs();}catch(e){console.error(e);}}
     async function apply(){const f=new URLSearchParams();f.set('globalSpeed',$('globalSpeed_n').value);f.set('globalMin',$('globalMin_n').value);f.set('globalMax',$('globalMax_n').value);
       // Determine per side whether sequential is active and pack into fields
       const isSeq = document.querySelector('.navlink.active')?.dataset.mode==='sequential';
@@ -201,7 +169,11 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
         f.set('F_anim',$('F_anim').value);f.set('F_speed',$('F_speed_n').value);f.set('F_phase',$('F_phase_n').value);f.set('F_width',$('F_width_n').value);f.set('F_branch',$('F_branch').checked?'1':'0');f.set('F_invert',$('F_invert').checked?'1':'0');
       }
       const r=await fetch('/api/apply',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:String(f)});$('status').textContent=await r.text()||'applied';setTimeout(()=>$('status').textContent='\u00a0',1600);} 
-  $('apply')?.addEventListener('click',apply);initTabs();setMode('normal');load();
+    document.addEventListener('input',e=>{if(e.target && ['L_anim','F_anim','L_speed','F_speed','L_speed_n','F_speed_n','L_phase','F_phase','L_phase_n','F_phase_n','L_width','F_width','L_width_n','F_width_n','L_branch','F_branch','L_invert','F_invert'].includes(e.target.id)) updateDiffs();});
+    document.querySelectorAll('.sync-btn').forEach(btn=>btn.addEventListener('click',()=>{const field=btn.dataset.field;const side=btn.dataset.side;const map={anim:['L_anim','F_anim'],speed:['L_speed','F_speed','L_speed_n','F_speed_n'],phase:['L_phase','F_phase','L_phase_n','F_phase_n'],width:['L_width','F_width','L_width_n','F_width_n'],branch:['L_branch','F_branch'],invert:['L_invert','F_invert']};const arr=map[field];if(!arr) return;const leaderFirst=side==='leader';function copy(srcPrefix,dstPrefix){arr.forEach(id=>{if(id.startsWith(srcPrefix)) {const other=id.replace(srcPrefix,dstPrefix);const src=$(id);const dst=$(other); if(!src||!dst)return; if(src.type==='checkbox'){dst.checked=src.checked;} else {dst.value=src.value;} });}
+      if(side==='leader'){copy('L_','F_');} else {copy('F_','L_');}
+      updateDiffs();}));
+    $('apply')?.addEventListener('click',apply);initTabs();setMode('normal');load();
   </script>
 </body>
 </html>
