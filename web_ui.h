@@ -79,13 +79,13 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
 <body>
   <header>
     <div class="nav">
-      <button class="hamburger" aria-label="menu" aria-expanded="false">☰</button>
       <h1>Vivid Controls</h1>
       <nav class="navlinks">
         <a href="#" data-mode="normal" class="navlink active">Normal</a>
         <a href="#" data-mode="sequential" class="navlink">Sequential</a>
         <a href="#" data-mode="mapping" class="navlink disabled" title="Not implemented">Mapping</a>
       </nav>
+      <button class="hamburger" aria-label="menu" aria-expanded="false">☰</button>
     </div>
   </header>
   <div class="container">
