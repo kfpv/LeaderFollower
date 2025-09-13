@@ -45,7 +45,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
     .navlink.disabled{opacity:.5;pointer-events:none}
     .hamburger{display:none;background:#1b2030;border:1px solid var(--outline);color:var(--text);border-radius:8px;padding:8px 10px;font-size:16px}
     @media (max-width:700px){
-      .hamburger{display:block}
+      .hamburger{display:block; margin-left: auto;}
     .navlinks{position:absolute;top:54px;right:12px;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--outline);border-radius:12px;padding:10px;display:none;z-index:9999}
       .navlinks.open{display:flex}
     }
@@ -80,7 +80,7 @@ static const char INDEX_HTML[] PROGMEM = R"HTML(
   <header>
     <div class="nav">
       <button class="hamburger" aria-label="menu" aria-expanded="false">☰</button>
-      <h1>Leader Controls</h1>
+      <h1>Vivid Controls</h1>
       <nav class="navlinks">
         <a href="#" data-mode="normal" class="navlink active">Normal</a>
         <a href="#" data-mode="sequential" class="navlink">Sequential</a>
