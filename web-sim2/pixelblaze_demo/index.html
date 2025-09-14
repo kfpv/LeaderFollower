@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pixelblaze Demo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="controls">
+  <label>speed: <input id="speedInput" type="number" step="0.0001" value="1.0" style="width:80px"></label>
+    <label>octaves: <input id="oct" type="range" min="1" max="6" step="1" value="2"></label>
+    <label>offset: <input id="offset" type="range" min="0.1" max="8" step="0.1" value="5.0"></label>
+  <button id="reset">Reset view</button>
+  <button id="copyPos">Copy pos</button>
+  <button id="pastePos">Paste pos</button>
+  <label>Pattern: <select id="patternSelector"><option value="perlin">Perlin</option><option value="swirl">Swirl</option></select></label>
+  <label><input type="checkbox" id="mapOff"> Map off</label>
+  <label><input type="checkbox" id="ledOverlay" checked> LEDs overlay</label>
+  <label><input type="checkbox" id="pause"> Pause</label>
+    <span id="info">Move mouse over canvas to see coords</span>
+  </div>
+
+  <canvas id="c"></canvas>
+  <div id="coordCard" aria-hidden="false"></div>
+
+  <div id="branchCard" class="collapsed" data-active="false">
+    <div id="branchHeader">
+      <h4>Branches</h4>
+      <span class="modeIndicator">OFF</span>
+    </div>
+    <div id="branchBody" style="display:none">
+      <div class="tinyNote">Configure 4 branches of 7 LEDs (model coords). Enter first LED offset (x,y) and per-LED delta (dx,dy). Preview updates live. Collapse to disable.</div>
+      <div id="branchContainer"></div>
+      <div id="branchActions">
+        <button id="resetMap" title="Reset pan/zoom only">Reset Map</button>
+        <button id="applyDefaults" title="Restore default branch vectors">Defaults</button>
+        <button id="copyBranches" title="Copy branch definitions">Copy B</button>
+        <button id="pasteBranches" title="Paste branch definitions">Paste B</button>
+  <button id="syncBranches" title="Toggle synchronized branch editing">Sync Off</button>
+  <label style="display:flex;align-items:center;gap:4px;font-size:11px"><input type="checkbox" id="calibrateEnable"> Calibrate</label>
+  <button id="autoCalibrate" title="Auto-calibrate LED brightness range">Auto-Cal</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

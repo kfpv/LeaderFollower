@@ -1,4 +1,4 @@
-# Auto-generated dynamic web UI (data-driven animation controls)
+// Auto-generated dynamic web UI (data-driven animation controls)
 #pragma once
 #include <Arduino.h>
 

@@ -78,69 +78,14 @@ void param_info(uint8_t param_id, char* name_out, float* min_out, float* max_out
 void param_set(uint8_t param_id, float value) {
   const AnimSchema::ParamDef* param = AnimSchema::findParam(param_id);
   if (!param) return;
-  
-  AnimSchema::ParamDef tmp;
-  memcpy_P(&tmp, param, sizeof(tmp));
-  
-  // Clamp value to parameter range
+  AnimSchema::ParamDef tmp; memcpy_P(&tmp, param, sizeof(tmp));
   if (value < tmp.minVal) value = tmp.minVal;
   if (value > tmp.maxVal) value = tmp.maxVal;
-  
-  switch (param_id) {
-    case AnimSchema::PID_SPEED:
-      g_params.speed = value;
-      break;
-    case AnimSchema::PID_PHASE:
-      g_params.phase = value;
-      break;
-    case AnimSchema::PID_WIDTH:
-      g_params.width = (uint8_t)value;
-      break;
-    case AnimSchema::PID_BRANCH:
-      g_params.branch = value != 0.0f;
-      break;
-    case AnimSchema::PID_INVERT:
-      g_params.invert = value != 0.0f;
-      break;
-    case AnimSchema::PID_LEVEL:
-      g_params.level = value;
-      break;
-    case AnimSchema::PID_SINGLE_IDX:
-      g_params.singleIndex = (uint8_t)value;
-      break;
-    case AnimSchema::PID_RANDOM_MODE:
-      g_params.randomMode = value != 0.0f;
-      break;
-    case AnimSchema::PID_GLOBAL_SPEED:
-      g_params.globalSpeed = value;
-      break;
-    case AnimSchema::PID_GLOBAL_MIN:
-      g_params.globalMin = value;
-      break;
-    case AnimSchema::PID_GLOBAL_MAX:
-      g_params.globalMax = value;
-      break;
-  }
+  // Use generic setter (defined in animations.h)
+  Anim::setParamField(g_params, param_id, value);
 }
-
 // Get a parameter value from the global parameter set
-float param_get(uint8_t param_id) {
-  switch (param_id) {
-    case AnimSchema::PID_SPEED: return g_params.speed;
-    case AnimSchema::PID_PHASE: return g_params.phase;
-    case AnimSchema::PID_WIDTH: return (float)g_params.width;
-    case AnimSchema::PID_BRANCH: return g_params.branch ? 1.0f : 0.0f;
-    case AnimSchema::PID_INVERT: return g_params.invert ? 1.0f : 0.0f;
-    case AnimSchema::PID_LEVEL: return g_params.level;
-    case AnimSchema::PID_SINGLE_IDX: return (float)g_params.singleIndex;
-    case AnimSchema::PID_RANDOM_MODE: return g_params.randomMode ? 1.0f : 0.0f;
-    case AnimSchema::PID_GLOBAL_SPEED: return g_params.globalSpeed;
-    case AnimSchema::PID_GLOBAL_MIN: return g_params.globalMin;
-    case AnimSchema::PID_GLOBAL_MAX: return g_params.globalMax;
-    default: return 0.0f;
-  }
-}
-
+float param_get(uint8_t param_id) { return Anim::getParamField(g_params, param_id); }
 // Evaluate animation using the global parameter set
 void anim_eval_global(uint8_t anim_id, float t, float* out_ptr) {
   Anim::applyAnim(anim_id, t, Anim::TOTAL_LEDS, g_params, out_ptr);
