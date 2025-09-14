@@ -1,5 +1,13 @@
 #pragma once
-#include <Arduino.h>
+
+// Conditional include for Arduino.h
+#if defined(__EMSCRIPTEN__) || defined(_LP64)
+  #include "web-sim2/Arduino.h"
+#else
+  // Actual Arduino compilation
+  #include <Arduino.h>
+#endif
+
 #include <stdint.h>
 
 // Data-driven parameter & animation schema (shared by encoder/decoder & web JSON)
@@ -32,6 +40,7 @@ static constexpr uint8_t PID_BRANCH       = 4;
 static constexpr uint8_t PID_INVERT       = 5;
 static constexpr uint8_t PID_LEVEL        = 6;
 static constexpr uint8_t PID_SINGLE_IDX   = 7;
+static constexpr uint8_t PID_RANDOM_MODE  = 8;
 static constexpr uint8_t PID_GLOBAL_SPEED = 20;
 static constexpr uint8_t PID_GLOBAL_MIN   = 21;
 static constexpr uint8_t PID_GLOBAL_MAX   = 22;
@@ -45,6 +54,7 @@ static const ParamDef PARAMS[] PROGMEM = {
   { PID_INVERT,       PT_BOOL,  "invert",      0.0f,    1.0f,  0.0f, 1  },
   { PID_LEVEL,        PT_RANGE, "level",       0.0f,    1.0f,  0.5f, 8  },
   { PID_SINGLE_IDX,   PT_INT,   "singleIndex", 0.0f,   63.0f,  0.0f, 6  },
+  { PID_RANDOM_MODE, PT_BOOL,  "random",      0.0f,    1.0f,  0.0f, 1  },
   { PID_GLOBAL_SPEED, PT_RANGE, "globalSpeed", 0.0f,    4.0f,  1.0f, 10 },
   { PID_GLOBAL_MIN,   PT_RANGE, "globalMin",   0.0f,    1.0f,  0.0f, 8  },
   { PID_GLOBAL_MAX,   PT_RANGE, "globalMax",   0.0f,    1.0f,  1.0f, 8  },
@@ -56,13 +66,15 @@ static const uint8_t A_WAVE[]   PROGMEM = { PID_SPEED, PID_PHASE, PID_BRANCH, PI
 static const uint8_t A_PULSE[]  PROGMEM = { PID_SPEED, PID_PHASE, PID_BRANCH };
 static const uint8_t A_CHASE[]  PROGMEM = { PID_SPEED, PID_WIDTH, PID_BRANCH };
 static const uint8_t A_SINGLE[] PROGMEM = { PID_SINGLE_IDX };
+static const uint8_t A_SPARKLE[] PROGMEM = { PID_SPEED, PID_RANDOM_MODE };
 
 static const AnimDef ANIMS[] PROGMEM = {
   { 0, "Static", A_STATIC, sizeof(A_STATIC) },
   { 1, "Wave",   A_WAVE,   sizeof(A_WAVE)   },
   { 2, "Pulse",  A_PULSE,  sizeof(A_PULSE)  },
   { 3, "Chase",  A_CHASE,  sizeof(A_CHASE)  },
-  { 4, "Single", A_SINGLE, sizeof(A_SINGLE) }
+  { 4, "Single", A_SINGLE, sizeof(A_SINGLE) },
+  { 5, "Sparkle", A_SPARKLE, sizeof(A_SPARKLE) }
 };
 
 inline const ParamDef* findParam(uint8_t id) {

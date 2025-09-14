@@ -108,6 +108,9 @@ void param_set(uint8_t param_id, float value) {
     case AnimSchema::PID_SINGLE_IDX:
       g_params.singleIndex = (uint8_t)value;
       break;
+    case AnimSchema::PID_RANDOM_MODE:
+      g_params.randomMode = value != 0.0f;
+      break;
     case AnimSchema::PID_GLOBAL_SPEED:
       g_params.globalSpeed = value;
       break;
@@ -130,6 +133,7 @@ float param_get(uint8_t param_id) {
     case AnimSchema::PID_INVERT: return g_params.invert ? 1.0f : 0.0f;
     case AnimSchema::PID_LEVEL: return g_params.level;
     case AnimSchema::PID_SINGLE_IDX: return (float)g_params.singleIndex;
+    case AnimSchema::PID_RANDOM_MODE: return g_params.randomMode ? 1.0f : 0.0f;
     case AnimSchema::PID_GLOBAL_SPEED: return g_params.globalSpeed;
     case AnimSchema::PID_GLOBAL_MIN: return g_params.globalMin;
     case AnimSchema::PID_GLOBAL_MAX: return g_params.globalMax;
@@ -244,6 +248,10 @@ void anim_eval(int anim_id, float t, float a, float b, float c, float d, float* 
       break;
     case 4: // single
       params.singleIndex = (uint8_t)a;
+      break;
+    case 5: // sparkle
+      params.speed = a;
+      params.randomMode = b != 0.0f;
       break;
   }
   

@@ -1,5 +1,12 @@
 #pragma once
-#include <Arduino.h>
+
+// Conditional include for Arduino.h
+#if defined(__EMSCRIPTEN__) || defined(_LP64)
+  #include "web-sim2/Arduino.h"
+#else
+  // Actual Arduino compilation
+  #include <Arduino.h>
+#endif
 
 namespace Anim {
 static constexpr uint8_t BRANCHES = 4;
@@ -83,6 +90,7 @@ enum ParamId : uint8_t {
   PID_INVERT = 5,
   PID_LEVEL = 6,
   PID_SINGLE_IDX = 7,
+  PID_RANDOM_MODE = 8,
   PID_GLOBAL_SPEED = 20,
   PID_GLOBAL_MIN = 21,
   PID_GLOBAL_MAX = 22
@@ -97,6 +105,7 @@ struct ParamSet {
   uint8_t singleIndex = 0;
   bool branch = false;
   bool invert = false;
+  bool randomMode = false;
   float globalSpeed = 1.0f;
   float globalMin = 0.0f;
   float globalMax = 1.0f;
@@ -118,6 +127,9 @@ inline void applyAnim(uint8_t animIndex, float t, uint16_t n, const ParamSet &ps
       break;
     case 4: // Single
       single(t, n, ps.singleIndex, out);
+      break;
+    case 5: // Sparkle
+      sparkle(t, n, ps.speed * ps.globalSpeed, ps.randomMode, out);
       break;
     default:
       // Fallback: clear

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <string.h>
+#include <stddef.h>
 
 template <typename T>
 static inline T constrain(T x, T a, T b) {
