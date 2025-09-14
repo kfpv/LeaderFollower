@@ -7,6 +7,8 @@ static constexpr uint8_t MSG_SYNC = 0x02;
 static constexpr uint8_t MSG_BRIGHTNESS = 0x03;
 static constexpr uint8_t MSG_ACK = 0x04;
 static constexpr uint8_t MSG_CFG = 0x05;
+// New dynamic configuration packet (variable length, see dyn_config.h)
+static constexpr uint8_t MSG_CFG2 = 0x06;
 
 // Flag bits inside CfgPacket.flags
 // bit0: branchMode (non-single animations)

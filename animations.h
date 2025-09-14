@@ -6,7 +6,9 @@ static constexpr uint8_t BRANCHES = 4;
 static constexpr uint8_t LEDS_PER_BRANCH = 7;
 static constexpr uint8_t TOTAL_LEDS = BRANCHES * LEDS_PER_BRANCH;
 
+// Legacy core primitives (kept so existing code keeps working)
 inline void staticOn(float t, uint16_t n, float level, float *out) {
+  (void)t;
   level = constrain(level, 0.0f, 1.0f);
   for (uint16_t i = 0; i < n; ++i) out[i] = level;
 }
@@ -67,9 +69,72 @@ inline void chase(float t, uint16_t n, float speed, uint8_t width, bool branchMo
   }
 }
 
-// Turn on a single LED (index 0..n-1), others off
 inline void single(float /*t*/, uint16_t n, uint16_t index, float *out) {
   for (uint16_t i = 0; i < n; ++i) out[i] = 0.0f;
   if (index < n) out[index] = 1.0f;
+}
+
+// Dynamic parameter keys (align with anim_schema.h IDs). Re-declare minimal constants for decoupling.
+enum ParamId : uint8_t {
+  PID_SPEED = 1,
+  PID_PHASE = 2,
+  PID_WIDTH = 3,
+  PID_BRANCH = 4,
+  PID_INVERT = 5,
+  PID_LEVEL = 6,
+  PID_SINGLE_IDX = 7,
+  PID_GLOBAL_SPEED = 20,
+  PID_GLOBAL_MIN = 21,
+  PID_GLOBAL_MAX = 22
+};
+
+// Simple POD holder for decoded values (sparse).
+struct ParamSet {
+  float speed = 3.0f;
+  float phase = 0.0f;
+  float level = 0.5f;
+  uint8_t width = 3;
+  uint8_t singleIndex = 0;
+  bool branch = false;
+  bool invert = false;
+  float globalSpeed = 1.0f;
+  float globalMin = 0.0f;
+  float globalMax = 1.0f;
+};
+
+inline void applyAnim(uint8_t animIndex, float t, uint16_t n, const ParamSet &ps, float *out) {
+  switch (animIndex) {
+    case 0: // Static
+      staticOn(t, n, ps.level, out);
+      break;
+    case 1: // Wave
+      wave(t, n, ps.speed * ps.globalSpeed, ps.phase, ps.branch, ps.invert, out);
+      break;
+    case 2: // Pulse (reuse pulse primitive with branch)
+      pulse(t, n, ps.speed * ps.globalSpeed, ps.phase, ps.branch, out);
+      break;
+    case 3: // Chase
+      chase(t, n, ps.speed * ps.globalSpeed, ps.width == 0 ? 1 : ps.width, ps.branch, out);
+      break;
+    case 4: // Single
+      single(t, n, ps.singleIndex, out);
+      break;
+    default:
+      // Fallback: clear
+      for (uint16_t i = 0; i < n; ++i) out[i] = 0.0f;
+      break;
+  }
+
+  // Apply global min/max scaling if needed
+  if (ps.globalMin != 0.0f || ps.globalMax != 1.0f) {
+    float gmin = ps.globalMin;
+    float gscale = (ps.globalMax > ps.globalMin) ? (ps.globalMax - ps.globalMin) : 0.0f;
+    for (uint16_t i = 0; i < n; ++i) {
+      float v = out[i];
+      v = gmin + v * gscale;
+      if (v < 0.0f) v = 0.0f; else if (v > 1.0f) v = 1.0f;
+      out[i] = v;
+    }
+  }
 }
 }

@@ -8,11 +8,11 @@ OUT_DIR = dist
 EMCC ?= emcc
 CXXFLAGS = -O3 -s MODULARIZE=1 -s ENVIRONMENT=web -fno-exceptions -fno-rtti -I.
 LDFLAGS = -s ALLOW_MEMORY_GROWTH=1 -s EXPORT_ES6=1 \
-	-s EXPORTED_FUNCTIONS='["_anim_branches","_anim_leds_per_branch","_anim_total_leds","_anim_eval","_anim_eval_store","_anim_eval2","_anim_get_value","_anim_value_at"]'
+	-s EXPORTED_FUNCTIONS='["_anim_branches","_anim_leds_per_branch","_anim_total_leds","_anim_count","_anim_name","_anim_param_count","_anim_param_id","_param_info","_param_set","_param_get","_anim_eval_global","_anim_eval_store_global","_anim_eval2_global","_anim_eval","_anim_eval_store","_anim_eval2","_anim_get_value","_anim_value_at"]'
 
 all: $(OUT_DIR)/$(TARGET).mjs $(OUT_DIR)/$(TARGET).wasm
 
-$(OUT_DIR)/$(TARGET).mjs: $(SRC) ../animations.h | $(OUT_DIR)
+$(OUT_DIR)/$(TARGET).mjs: $(SRC) ../animations.h ../anim_schema.h | $(OUT_DIR)
 	$(EMCC) $(CXXFLAGS) $(LDFLAGS) -o $@ $(SRC)
 
 $(OUT_DIR):
