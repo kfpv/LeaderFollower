@@ -11,3 +11,5 @@ run "cd web-sim2 && bun run build-wasm && bun run build" to test if it builds
 DO NOT RUN bun run dev - the dev server is already running in background. 
 
 Ignore error "In included file: 'Arduino.h' file not found"
+
+avoid AI_APICallError: The messages parameter is illegal. Please check the documentation.

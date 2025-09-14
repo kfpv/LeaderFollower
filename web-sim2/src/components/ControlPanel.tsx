@@ -1,5 +1,5 @@
 interface GlobalState {
-  speed: number
+  globalSpeed: number
 }
 
 interface ParameterInfo {
@@ -170,23 +170,23 @@ const ControlPanel = ({
     <>
       <label className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          Speed
+          Global Speed
           <input 
             type="range" 
             min="0" 
-            max="20" 
+            max="4" 
             step="0.01"
-            value={globalState!.speed}
-            onChange={(e) => onGlobalChange!('speed', parseFloat(e.target.value))}
+            value={globalState!.globalSpeed}
+            onChange={(e) => onGlobalChange!('globalSpeed', parseFloat(e.target.value))}
             className="flex-1 [&::-webkit-slider-runnable-track]:bg-gray-600 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
           />
           <input 
             type="number" 
             min="0" 
-            max="20" 
+            max="4" 
             step="0.01"
-            value={globalState!.speed}
-            onChange={(e) => onGlobalChange!('speed', parseFloat(e.target.value) || 0)}
+            value={globalState!.globalSpeed}
+            onChange={(e) => onGlobalChange!('globalSpeed', parseFloat(e.target.value) || 0)}
             className="w-16 px-1 py-0.5 text-sm bg-gray-800 border border-gray-600 rounded"
           />
         </div>

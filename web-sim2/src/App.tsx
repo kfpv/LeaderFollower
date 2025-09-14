@@ -39,7 +39,7 @@ interface WASMModule {
 
 
 interface GlobalState {
-  speed: number
+  globalSpeed: number
 }
 
 interface ParameterInfo {
@@ -74,7 +74,7 @@ const App = () => {
   const [rightValues, setRightValues] = useState<Float32Array>(new Float32Array(28))
   
   const [globalControls, setGlobalControls] = useState<GlobalState>({
-    speed: 6
+    globalSpeed: 1.0
   })
   
   // Store separate parameter values for left and right trees (initialized dynamically)
@@ -214,17 +214,17 @@ const App = () => {
         const defaultLeftParams: {[key: number]: number} = {}
         const defaultRightParams: {[key: number]: number} = {}
         
-        // Set global speed parameter
-        mod._param_set(1, 3.0)
-        defaultLeftParams[1] = 3.0
-        defaultRightParams[1] = 3.0
+        // Set global speed parameter (not stored in per-tree states)
+        mod._param_set(20, 1.0) // PID_GLOBAL_SPEED = 20
         
-        // Initialize all parameters with their defaults from the loaded animations
+        // Initialize all parameters with their defaults from the loaded animations (excluding global speed)
         anims.forEach(anim => {
           anim.parameters.forEach(param => {
-            defaultLeftParams[param.id] = param.default
-            defaultRightParams[param.id] = param.default
-            mod._param_set(param.id, param.default)
+            if (param.id !== 20) { // Exclude global speed from per-tree states
+              defaultLeftParams[param.id] = param.default
+              defaultRightParams[param.id] = param.default
+              mod._param_set(param.id, param.default)
+            }
           })
         })
         
@@ -248,7 +248,13 @@ const App = () => {
         const currentTime = (Date.now() - startTimeRef.current) / 1000
         const t = currentTime
 
-        // Evaluate left tree (parameters are already set by user interactions)
+        // Apply global speed first
+        module._param_set(20, globalControls.globalSpeed)
+
+        // Apply left tree parameters and evaluate
+        Object.entries(leftParams).forEach(([paramId, value]) => {
+          module._param_set(parseInt(paramId), value)
+        })
         module._anim_eval2_global(leftAnimation, t)
         const newLeftValues = new Float32Array(totalLeds)
         for (let i = 0; i < totalLeds; i++) {
@@ -256,7 +262,13 @@ const App = () => {
         }
         setLeftValues(newLeftValues)
 
-        // Evaluate right tree (parameters are already set by user interactions)
+        // Apply global speed again (in case it was overwritten)
+        module._param_set(20, globalControls.globalSpeed)
+
+        // Apply right tree parameters and evaluate
+        Object.entries(rightParams).forEach(([paramId, value]) => {
+          module._param_set(parseInt(paramId), value)
+        })
         module._anim_eval2_global(rightAnimation, t)
         const newRightValues = new Float32Array(totalLeds)
         for (let i = 0; i < totalLeds; i++) {
@@ -275,7 +287,7 @@ const App = () => {
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [module, isPaused, leftAnimation, rightAnimation, totalLeds])
+  }, [module, isPaused, leftAnimation, rightAnimation, totalLeds, leftParams, rightParams, globalControls.globalSpeed])
 
   const handleLeftAnimationChange = (animationIndex: number) => {
     setLeftAnimation(animationIndex)
@@ -288,10 +300,12 @@ const App = () => {
   const handleParameterChange = (paramId: number, value: number, tree: 'left' | 'right') => {
     if (module) {
       module._param_set(paramId, value)
-      if (tree === 'left') {
-        setLeftParams(prev => ({ ...prev, [paramId]: value }))
-      } else {
-        setRightParams(prev => ({ ...prev, [paramId]: value }))
+      if (paramId !== 20) { // Don't store global speed in per-tree states
+        if (tree === 'left') {
+          setLeftParams(prev => ({ ...prev, [paramId]: value }))
+        } else {
+          setRightParams(prev => ({ ...prev, [paramId]: value }))
+        }
       }
     }
   }
@@ -303,8 +317,8 @@ const App = () => {
 
   const handleGlobalChange = (key: keyof GlobalState, value: any) => {
     setGlobalControls(prev => ({ ...prev, [key]: value }))
-    if (module && key === 'speed') {
-      module._param_set(1, value)
+    if (module && key === 'globalSpeed') {
+      module._param_set(20, value) // PID_GLOBAL_SPEED = 20
     }
   }
 
