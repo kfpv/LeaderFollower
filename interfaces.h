@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 struct Message {
-  enum Type : uint8_t { REQ=0x01, SYNC=0x02, BRIGHTNESS=0x03, ACK=0x04, CFG=0x05 };
+  enum Type : uint8_t { REQ=0x01, SYNC=0x02, BRIGHTNESS=0x03, ACK=0x04, CFG=0x05, CFG2=0x06 };
   Type type;
   uint32_t time_ms{0};
   uint32_t frame{0};
@@ -18,6 +18,16 @@ struct Message {
   float cfg_globalSpeed{1.0f};
   float cfg_min{0.0f};
   float cfg_max{1.0f};
+  // Dynamic configuration payload (when type==CFG2)
+  uint8_t cfg2_role{0};
+  uint8_t cfg2_animIndex{0};
+  uint8_t cfg2_paramCount{0};
+  uint8_t cfg2_globalCount{0};
+  // Fixed small-capacity arrays (tune as needed)
+  uint8_t cfg2_paramIds[16]{};
+  float   cfg2_paramValues[16]{};
+  uint8_t cfg2_globalIds[8]{};
+  float   cfg2_globalValues[8]{};
 };
 
 class CommunicationInterface {
@@ -39,6 +49,11 @@ class CommunicationInterface {
                            float globalSpeed,
                            float minScale,
                            float maxScale) = 0;
+  // Send dynamic configuration (CFG2). Caller provides per-animation param id/value pairs and global param pairs.
+  virtual bool sendAnimCfg2(uint8_t role,
+                            uint8_t animIndex,
+                            const uint8_t *animParamIds, const float *animParamValues, uint8_t animParamCount,
+                            const uint8_t *globalParamIds, const float *globalParamValues, uint8_t globalParamCount) = 0;
   virtual bool poll(Message &outMsg) = 0; // non-blocking; true when got a message
   virtual void loop() = 0;                // service IRQs if needed
 };

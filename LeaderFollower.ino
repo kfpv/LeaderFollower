@@ -3,6 +3,7 @@
 #include "animations.h"
 #include "protocol.h"
 #include "node_config.h"
+#include "anim_schema.h"
 
 #if defined(ARDUINO_ARCH_ESP32)
 #include <WiFi.h>
@@ -50,13 +51,19 @@ struct Node {
   float globalMin{0.0f}; // 0..1
   float globalMax{0.1f}; // 0..1
 
+  // Full dynamic parameter sets (mirror of Anim::ParamSet)
+  Anim::ParamSet leaderParams; // defaults already set by struct definition
+  Anim::ParamSet followerParams;
+
 #if defined(ARDUINO_ARCH_ESP32)
   // Web UI (leader only)
   WebServer *server{nullptr};
 #endif
 
   void begin() {
-    Serial.begin(115200);
+  #ifdef ARDUINO
+  Serial.begin(115200);
+  #endif
     comm->begin();
     leds->begin();
     leds->setBrightness(brightness);
@@ -78,9 +85,17 @@ struct Node {
   while (comm->poll(msg)) {
       if (!isLeader && msg.type == Message::SYNC) {
         // Follower: ACK and apply time sync offset if needed
-        comm->sendAck(msg.frame);
-    lastSyncRecvMs = millis();
-        int32_t now32 = (int32_t)millis();
+    comm->sendAck(msg.frame);
+  #ifdef ARDUINO
+  lastSyncRecvMs = millis();
+  #else
+  lastSyncRecvMs = (uint32_t)0; // placeholder for non-arduino build
+  #endif
+  #ifdef ARDUINO
+  int32_t now32 = (int32_t)millis();
+  #else
+  int32_t now32 = 0;
+  #endif
         int32_t newOffset = (int32_t)msg.time_ms - now32;
         int32_t diff = newOffset - timeOffsetMs;
         int32_t adiff = diff < 0 ? -diff : diff;
@@ -89,10 +104,14 @@ struct Node {
           // For moderate diffs, slews half-way to avoid visible jumps
           if (adiff < 200) {
             timeOffsetMs += diff / 2; // gentle correction
+            #ifdef ARDUINO
             Serial.print("[SYNC] Slew by ms="); Serial.println(diff / 2);
+            #endif
           } else {
             timeOffsetMs = newOffset; // large jump -> snap
+            #ifdef ARDUINO
             Serial.print("[SYNC] Snap offset to ms="); Serial.println(timeOffsetMs);
+            #endif
           }
         } else {
           // Already close enough
@@ -107,18 +126,28 @@ struct Node {
         // Handle ACK received by leader
         if (pendingAck && msg.frame == pendingAckFrame) {
           pendingAck = false;
+          #ifdef ARDUINO
           Serial.print("ACK confirmed for frame "); Serial.println(msg.frame);
+          #endif
         }
       } else if (isLeader && msg.type == Message::REQ) {
           // Leader: if pending, re-send the SAME frame; otherwise start a new in-flight SYNC
+          #ifdef ARDUINO
           uint32_t nowReq = millis();
+          #else
+          uint32_t nowReq = 0;
+          #endif
           if (pendingAck) {
+            #ifdef ARDUINO
             Serial.print("REQ: resending SAME frame "); Serial.println(pendingAckFrame);
+            #endif
             comm->sendSync(nowReq, pendingAckFrame, Proto::encodeAnimCode(animIndex));
             lastSyncSent = nowReq;
           } else {
             uint32_t currentFrameReq = nowReq / 33;
+            #ifdef ARDUINO
             Serial.print("REQ: sending NEW frame "); Serial.println(currentFrameReq);
+            #endif
             comm->sendSync(nowReq, currentFrameReq, Proto::encodeAnimCode(animIndex));
             lastSyncSent = nowReq;
             pendingAck = true;
@@ -137,10 +166,38 @@ struct Node {
         globalSpeed = msg.cfg_globalSpeed;
   globalMin = msg.cfg_min;
   globalMax = msg.cfg_max;
-        Serial.println("Applied follower CFG from leader");
+  #ifdef ARDUINO
+  Serial.println("Applied follower CFG from leader");
+  #endif
+      } else if (!isLeader && msg.type == Message::CFG2) {
+        // Dynamic configuration: map param IDs to followerCfg / globals
+        followerCfg.animIndex = msg.cfg2_animIndex;
+        // Apply all params directly to followerParams
+        for (uint8_t i=0;i<msg.cfg2_paramCount;i++) {
+          Anim::setParamField(followerParams, msg.cfg2_paramIds[i], msg.cfg2_paramValues[i]);
+        }
+        for (uint8_t i=0;i<msg.cfg2_globalCount;i++) {
+          Anim::setParamField(followerParams, msg.cfg2_globalIds[i], msg.cfg2_globalValues[i]);
+        }
+        // Derive legacy followerCfg & globals for rendering compatibility
+        followerCfg.speed = followerParams.speed;
+        followerCfg.phase = followerParams.phase;
+        followerCfg.width = (followerCfg.animIndex==4) ? followerParams.singleIndex : followerParams.width;
+        followerCfg.branchMode = followerParams.branch;
+        followerCfg.invert = followerParams.invert;
+        globalSpeed = followerParams.globalSpeed;
+        globalMin = followerParams.globalMin;
+        globalMax = followerParams.globalMax;
+  #ifdef ARDUINO
+  Serial.println("Applied follower CFG2 from leader");
+  #endif
       }
     }
-    uint32_t now = millis();
+  #ifdef ARDUINO
+  uint32_t now = millis();
+  #else
+  uint32_t now = 0;
+  #endif
 
     // Follower: only request sync until first SYNC is received
     if (!isLeader && lastSyncRecvMs == 0) {
@@ -156,7 +213,9 @@ struct Node {
         // No pending ACK - send sync every minute or if this is first sync
         if (lastSyncSent == 0 || (now - lastSyncSent > syncInterval)) {
           uint32_t currentFrame = now / 33;
+          #ifdef ARDUINO
           Serial.print("SYNC: new frame "); Serial.println(currentFrame);
+          #endif
       comm->sendSync(now, currentFrame, Proto::encodeAnimCode(leaderCfg.animIndex));
           lastSyncSent = now;
           pendingAck = true;
@@ -165,7 +224,9 @@ struct Node {
       } else {
         // Pending ACK - on timeout, resend the SAME frame
         if (now - lastSyncSent > ackTimeout) {
+          #ifdef ARDUINO
           Serial.print("ACK timeout - resending SAME frame "); Serial.println(pendingAckFrame);
+          #endif
       comm->sendSync(now, pendingAckFrame, Proto::encodeAnimCode(leaderCfg.animIndex));
           lastSyncSent = now;
         }
@@ -183,22 +244,30 @@ struct Node {
     framesSincePrint++;
     if (now - lastPrintMs >= 500) {
       float fps = framesSincePrint * 1000.0f / float(now - lastPrintMs);
-      Serial.print("FPS: "); Serial.println(fps);
+  #ifdef ARDUINO
+  Serial.print("FPS: "); Serial.println(fps);
+  #endif
 
       // Map brightness to 5 levels: 0..4 -> characters from low to high
       const char mapChars[5] = { ' ', '.', ':', '*', '#' };
       // Print one line per branch to simulate in-terminal display
       for (uint8_t b = 0; b < Anim::BRANCHES; ++b) {
-        Serial.print("Branch "); Serial.print(b); Serial.print(": ");
+  #ifdef ARDUINO
+  Serial.print("Branch "); Serial.print(b); Serial.print(": ");
+  #endif
         for (uint8_t i = 0; i < Anim::LEDS_PER_BRANCH; ++i) {
           uint16_t idx = b * Anim::LEDS_PER_BRANCH + i;
           float v = buf[idx];
           // apply global brightness as well
           v = constrain(v * brightness, 0.0f, 1.0f);
           uint8_t level = (uint8_t)roundf(v * 4.0f); // 0..4
+          #ifdef ARDUINO
           Serial.print(mapChars[level]);
+          #endif
         }
-        Serial.println();
+  #ifdef ARDUINO
+  Serial.println();
+  #endif
       }
 
       lastPrintMs = now;
@@ -245,6 +314,19 @@ struct Node {
 
 #if defined(ARDUINO_ARCH_ESP32)
   // --- Web UI ---
+  // Helper: build & send full parameter set for a role via CFG2
+  void sendAllParams(uint8_t role, uint8_t animIndex, Anim::ParamSet &ps){
+    // Gather ALL parameters from schema
+    const size_t MAXP = 24; // safety
+    uint8_t ids[MAXP]; float vals[MAXP]; uint8_t count=0;
+    for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
+      AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
+      if (count < MAXP){ ids[count] = pd.id; vals[count] = Anim::getParamField(ps, pd.id); count++; }
+    }
+    // No separate globals (all in main list)
+    comm->sendAnimCfg2(role, animIndex, ids, vals, count, nullptr, nullptr, 0);
+  }
+
   void setupWiFiAndServer() {
     static WebServer srv(80);
     server = &srv;
@@ -255,9 +337,11 @@ struct Node {
     Serial.print("AP start: "); Serial.println(ok ? "OK" : "FAIL");
     Serial.print("AP IP: "); Serial.println(WiFi.softAPIP());
 
-    server->on("/", HTTP_GET, [this]() { serveIndex(); });
+  server->on("/", HTTP_GET, [this]() { serveIndex(); });
   server->on("/api/state", HTTP_GET, [this]() { serveState(); });
-  server->on("/api/apply", HTTP_POST, [this]() { handleApply(); });
+  server->on("/api/apply", HTTP_POST, [this]() { handleApply(); }); // legacy form
+  server->on("/api/schema", HTTP_GET, [this]() { serveSchema(); });
+  server->on("/api/cfg2", HTTP_POST, [this]() { handleCfg2(); });
     server->begin();
   }
 
@@ -288,6 +372,85 @@ struct Node {
     server->send(200, "application/json", j);
   }
 
+  void serveSchema() {
+    using namespace AnimSchema;
+    String j = "{";
+    j += "\"params\":[";
+    for (size_t i=0;i<sizeof(PARAMS)/sizeof(PARAMS[0]); ++i){
+      ParamDef pd; memcpy_P(&pd, &PARAMS[i], sizeof(pd));
+      if (i) j += ',';
+      j += '{';
+      j += "\"id\":" + String(pd.id);
+      j += ",\"name\":\"" + String(pd.name) + "\"";
+      j += ",\"type\":" + String((uint8_t)pd.type);
+      j += ",\"min\":" + String(pd.minVal,3);
+      j += ",\"max\":" + String(pd.maxVal,3);
+      j += ",\"def\":" + String(pd.defVal,3);
+      j += ",\"bits\":" + String(pd.bits);
+      j += '}';
+    }
+    j += "],\"animations\":[";
+    for (size_t i=0;i<sizeof(ANIMS)/sizeof(ANIMS[0]); ++i){
+      AnimDef ad; memcpy_P(&ad, &ANIMS[i], sizeof(ad));
+      if (i) j += ','; j += '{';
+      j += "\"index\":" + String(ad.index);
+      j += ",\"name\":\"" + String(ad.name) + "\"";
+      j += ",\"params\":[";
+      for (uint8_t k=0;k<ad.paramCount; ++k){
+        uint8_t pid = pgm_read_byte(ad.paramIds + k);
+        if (k) j += ','; j += String(pid);
+      }
+      j += "]}";
+    }
+    j += "]}";
+    server->send(200, "application/json", j);
+  }
+
+  // Very light JSON parser for cfg2 {role,animIndex,params:[{id,value}],globals:[{id,value}]}
+  void handleCfg2() {
+    String body = server->arg("plain");
+    auto extractNum=[&](const char *key, float defv)->float{
+      int idx = body.indexOf(key);
+      if (idx<0) return defv; idx = body.indexOf(':', idx); if (idx<0) return defv; idx++;
+      while (idx<(int)body.length() && (body[idx]==' ')) idx++;
+      int end=idx; while (end<(int)body.length() && ( (body[end]>='0'&&body[end]<='9') || body[end]=='-' || body[end]=='+' || body[end]=='.' || body[end]=='e' || body[end]=='E')) end++;
+      return body.substring(idx,end).toFloat();
+    };
+    uint8_t role = (uint8_t)extractNum("\"role\"", 1);
+    uint8_t animIndex = (uint8_t)extractNum("\"animIndex\"", followerCfg.animIndex);
+    // Update target param set
+    Anim::ParamSet &ps = (role==0)? leaderParams : followerParams;
+    // Parse all occurrences of "id":X and following "value":Y (simple approximation)
+    int pos=0; int safety=0;
+    while (safety<64) {
+      int idKey = body.indexOf("\"id\"", pos); if (idKey<0) break;
+      int colon = body.indexOf(':', idKey); if (colon<0) break; int idStart=colon+1;
+      while (idStart<(int)body.length() && body[idStart]==' ') idStart++;
+      int idEnd=idStart; while (idEnd<(int)body.length() && isdigit(body[idEnd])) idEnd++;
+      uint8_t pid = (uint8_t)body.substring(idStart,idEnd).toInt();
+      int valKey = body.indexOf("\"value\"", idEnd); if (valKey<0) { pos = idEnd; safety++; continue; }
+      colon = body.indexOf(':', valKey); if (colon<0) break; int vStart=colon+1; while (vStart<(int)body.length() && body[vStart]==' ') vStart++;
+      int vEnd=vStart; while (vEnd<(int)body.length() && ( (body[vEnd]>='0'&&body[vEnd]<='9') || body[vEnd]=='-' || body[vEnd]=='+' || body[vEnd]=='.')) vEnd++;
+      float v = body.substring(vStart,vEnd).toFloat();
+      Anim::setParamField(ps, pid, v);
+      pos = vEnd; safety++;
+    }
+    // Also parse globals array similarly (already covered by generic loop since arrays share structure)
+    if (role==0){
+      leaderCfg.animIndex = animIndex; // keep legacy sync
+      // derive legacy fields
+      leaderCfg.speed = ps.speed; leaderCfg.phase = ps.phase; leaderCfg.width = (animIndex==4)? ps.singleIndex : ps.width; leaderCfg.branchMode = ps.branch; leaderCfg.invert = ps.invert;
+      globalSpeed = ps.globalSpeed; globalMin = ps.globalMin; globalMax = ps.globalMax;
+    } else {
+      followerCfg.animIndex = animIndex;
+      followerCfg.speed = ps.speed; followerCfg.phase = ps.phase; followerCfg.width = (animIndex==4)? ps.singleIndex : ps.width; followerCfg.branchMode = ps.branch; followerCfg.invert = ps.invert;
+      globalSpeed = ps.globalSpeed; globalMin = ps.globalMin; globalMax = ps.globalMax;
+      // Send out updated full param set for follower immediately
+      sendAllParams(1, animIndex, followerParams);
+    }
+    server->send(200, "application/json", "{\"ok\":true}");
+  }
+
   void handleApply() {
     auto getF = [this](const char* k, float defv){ return server->hasArg(k) ? server->arg(k).toFloat() : defv; };
     auto getI = [this](const char* k, int defv){ return server->hasArg(k) ? server->arg(k).toInt() : defv; };
@@ -315,10 +478,16 @@ struct Node {
     // Keep legacy animIndex in sync for SYNC packets
     animIndex = leaderCfg.animIndex;
 
-    // Send follower config over radio
-  comm->sendAnimCfg(/*role=*/1, followerCfg.animIndex, followerCfg.speed, followerCfg.phase,
-            followerCfg.width, followerCfg.branchMode, followerCfg.invert,
-            globalSpeed, globalMin, globalMax);
+  // Update followerParams with legacy form subset
+  Anim::setParamField(followerParams, AnimSchema::PID_SPEED, followerCfg.speed);
+  Anim::setParamField(followerParams, AnimSchema::PID_PHASE, followerCfg.phase);
+  Anim::setParamField(followerParams, (followerCfg.animIndex==4)? AnimSchema::PID_SINGLE_IDX : AnimSchema::PID_WIDTH, followerCfg.width);
+  Anim::setParamField(followerParams, AnimSchema::PID_BRANCH, followerCfg.branchMode?1.0f:0.0f);
+  Anim::setParamField(followerParams, AnimSchema::PID_INVERT, followerCfg.invert?1.0f:0.0f);
+  Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_SPEED, globalSpeed);
+  Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MIN, globalMin);
+  Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MAX, globalMax);
+  sendAllParams(1, followerCfg.animIndex, followerParams);
 
     server->send(200, "text/plain", "applied");
   }
@@ -333,4 +502,8 @@ void setup(){
   node.begin();
 }
 
-void loop(){ node.tick(); delay(10); }
+void loop(){ node.tick();
+#ifdef ARDUINO
+  delay(10);
+#endif
+}

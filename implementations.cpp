@@ -4,6 +4,7 @@
 #include <LoRaWan_APP.h>
 #include "interfaces.h"
 #include "protocol.h"
+#include "dyn_config.h"
 #include "node_config.h"
 #include "led_channel_inverse.h"
 
@@ -145,6 +146,27 @@ class HeltecLoRa : public CommunicationInterface {
     return sendRaw((uint8_t*)&p, sizeof(p));
   }
 
+  bool sendAnimCfg2(uint8_t role,
+                    uint8_t animIndex,
+                    const uint8_t *animParamIds, const float *animParamValues, uint8_t animParamCount,
+                    const uint8_t *globalParamIds, const float *globalParamValues, uint8_t globalParamCount) override {
+    // Build DynCfg::ParamValue arrays on stack
+    DynCfg::ParamValue localAnim[16];
+    DynCfg::ParamValue localGlobal[16];
+    if (animParamCount > 16) animParamCount = 16;
+    if (globalParamCount > 16) globalParamCount = 16;
+    for (uint8_t i=0;i<animParamCount;i++){ localAnim[i] = { animParamIds[i], animParamValues[i] }; }
+    for (uint8_t i=0;i<globalParamCount;i++){ localGlobal[i] = { globalParamIds[i], globalParamValues[i] }; }
+    uint8_t buf[64];
+    uint8_t len = DynCfg::encodeCfg2(role, animIndex, localAnim, animParamCount, localGlobal, globalParamCount, buf, sizeof(buf));
+    if (!len) return false;
+    Serial.print("TX CFG2 role="); Serial.print(role);
+    Serial.print(" anim="); Serial.print(animIndex);
+    Serial.print(" aParams="); Serial.print(animParamCount);
+    Serial.print(" gParams="); Serial.println(globalParamCount);
+    return sendRaw(buf, len);
+  }
+
   bool poll(Message &outMsg) override {
     if (!_hasRx) return false;
     _hasRx = false;
@@ -169,7 +191,7 @@ class HeltecLoRa : public CommunicationInterface {
   outMsg.type = (Message::Type)Proto::MSG_BRIGHTNESS; outMsg.brightness = p->percent/100.0f;
   Serial.print("RX BRIGHTNESS percent="); Serial.println(p->percent);
   return true;
-    } else if (type == Proto::MSG_CFG && _rxSize >= sizeof(Proto::CfgPacket)) {
+  } else if (type == Proto::MSG_CFG && _rxSize >= sizeof(Proto::CfgPacket)) {
   auto *p = reinterpret_cast<Proto::CfgPacket*>(_rxBuf);
   outMsg.type = Message::CFG;
   outMsg.cfg_role = p->role;
@@ -198,6 +220,27 @@ class HeltecLoRa : public CommunicationInterface {
   Serial.print(" min="); Serial.print(p->minScale);
   Serial.print(" max="); Serial.println(p->maxScale);
   return true;
+    } else if (type == Proto::MSG_CFG2) {
+      // Dynamic configuration decode
+      DynCfg::ParamValue animVals[16]; uint8_t animCount=0;
+      DynCfg::ParamValue globalVals[8]; uint8_t globalCount=0;
+      uint8_t role=0, animIndex=0;
+      if (!DynCfg::decodeCfg2(_rxBuf, (uint8_t)_rxSize, role, animIndex, animVals, animCount, globalVals, globalCount)) {
+        Serial.println("RX CFG2 decode failed");
+        return false;
+      }
+      outMsg.type = Message::CFG2;
+      outMsg.cfg2_role = role;
+      outMsg.cfg2_animIndex = animIndex;
+      outMsg.cfg2_paramCount = animCount;
+      outMsg.cfg2_globalCount = globalCount;
+      for (uint8_t i=0;i<animCount && i<16;i++){ outMsg.cfg2_paramIds[i]=animVals[i].id; outMsg.cfg2_paramValues[i]=animVals[i].value; }
+      for (uint8_t i=0;i<globalCount && i<8;i++){ outMsg.cfg2_globalIds[i]=globalVals[i].id; outMsg.cfg2_globalValues[i]=globalVals[i].value; }
+      Serial.print("RX CFG2 role="); Serial.print(role);
+      Serial.print(" anim="); Serial.print(animIndex);
+      Serial.print(" aParams="); Serial.print(animCount);
+      Serial.print(" gParams="); Serial.println(globalCount);
+      return true;
     } else if (type == Proto::MSG_REQ && _rxSize >= sizeof(Proto::ReqPacket)) {
   outMsg.type = (Message::Type)Proto::MSG_REQ;
   Serial.println("RX REQ");
