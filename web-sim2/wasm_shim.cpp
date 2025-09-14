@@ -160,6 +160,62 @@ float anim_get_value(uint16_t i) {
 
 float anim_value_at(uint16_t i) { return anim_get_value(i); }
 
+// Safe string handling functions for JavaScript
+void anim_name_safe(uint8_t index, char* buffer, uint16_t buffer_size) {
+  const char* name = anim_name(index);
+  if (name && buffer_size > 0) {
+    strncpy(buffer, name, buffer_size - 1);
+    buffer[buffer_size - 1] = '\0';
+  } else if (buffer_size > 0) {
+    buffer[0] = '\0';
+  }
+}
+
+void param_name_safe(uint8_t param_id, char* buffer, uint16_t buffer_size) {
+  const AnimSchema::ParamDef* param = AnimSchema::findParam(param_id);
+  if (param && buffer_size > 0) {
+    AnimSchema::ParamDef tmp;
+    memcpy_P(&tmp, param, sizeof(tmp));
+    strncpy(buffer, tmp.name, buffer_size - 1);
+    buffer[buffer_size - 1] = '\0';
+  } else if (buffer_size > 0) {
+    buffer[0] = '\0';
+  }
+}
+
+// Helper functions for JavaScript to read memory directly
+uint8_t read_uint8(uint32_t addr) {
+  return *((uint8_t*)addr);
+}
+
+int8_t read_int8(uint32_t addr) {
+  return *((int8_t*)addr);
+}
+
+uint16_t read_uint16(uint32_t addr) {
+  return *((uint16_t*)addr);
+}
+
+int16_t read_int16(uint32_t addr) {
+  return *((int16_t*)addr);
+}
+
+uint32_t read_uint32(uint32_t addr) {
+  return *((uint32_t*)addr);
+}
+
+int32_t read_int32(uint32_t addr) {
+  return *((int32_t*)addr);
+}
+
+float read_float(uint32_t addr) {
+  return *((float*)addr);
+}
+
+double read_double(uint32_t addr) {
+  return *((double*)addr);
+}
+
 // Legacy compatibility functions - map old interface to new dynamic system
 void anim_eval(int anim_id, float t, float a, float b, float c, float d, float* out_ptr) {
   // Create a temporary parameter set for legacy interface

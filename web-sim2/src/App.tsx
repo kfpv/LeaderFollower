@@ -9,7 +9,6 @@ interface WASMModule {
   _anim_total_leds: () => number
   _anim_eval2: (animId: number, t: number, a: number, b: number, c: number, d: number) => void
   _anim_value_at: (index: number) => number
-  UTF8ToString: (ptr: number) => string
   // New dynamic parameter functions
   _anim_count: () => number
   _anim_name: (index: number) => number
@@ -20,6 +19,21 @@ interface WASMModule {
   _param_get: (paramId: number) => number
   _anim_eval2_global: (animId: number, t: number) => void
   _anim_get_value: (index: number) => number
+  // Safe string handling functions
+  _anim_name_safe: (index: number, buffer: number, bufferSize: number) => void
+  _param_name_safe: (paramId: number, buffer: number, bufferSize: number) => void
+  // Memory management functions
+  _malloc: (size: number) => number
+  _free: (ptr: number) => void
+  // Memory reading helper functions
+  _read_uint8: (addr: number) => number
+  _read_int8: (addr: number) => number
+  _read_uint16: (addr: number) => number
+  _read_int16: (addr: number) => number
+  _read_uint32: (addr: number) => number
+  _read_int32: (addr: number) => number
+  _read_float: (addr: number) => number
+  _read_double: (addr: number) => number
 }
 
 
@@ -63,78 +77,108 @@ const App = () => {
     speed: 6
   })
   
-  // Store separate parameter values for left and right trees
-  const [leftParams, setLeftParams] = useState<{[key: number]: number}>({
-    2: 0, // phase
-    4: 1, // branch
-    5: 0, // invert
-    3: 3, // width
-    6: 0.5, // level
-    7: 0 // singleIndex
-  })
-  
-  const [rightParams, setRightParams] = useState<{[key: number]: number}>({
-    2: 0, // phase
-    4: 1, // branch
-    5: 0, // invert
-    3: 3, // width
-    6: 0.5, // level
-    7: 0 // singleIndex
-  })
+  // Store separate parameter values for left and right trees (initialized dynamically)
+  const [leftParams, setLeftParams] = useState<{[key: number]: number}>({})
+  const [rightParams, setRightParams] = useState<{[key: number]: number}>({})
   
   const animationRef = useRef<number | null>(null)
   const startTimeRef = useRef<number>(Date.now())
 
   
 
-  // Load animation definitions using static names from ANIMS array
-  const loadAnimations = async (): Promise<AnimationInfo[]> => {
-    // Static animation names from ANIMS array in implementations.cpp
-    const staticAnimations = [
-      { index: 0, name: "Static" },
-      { index: 1, name: "Wave" },
-      { index: 2, name: "Pulse" },
-      { index: 3, name: "Chase" },
-      { index: 4, name: "Single" }
-    ]
+  // Helper function to read string from memory using helper functions
+  const readStringFromMemory = (mod: WASMModule, ptr: number): string => {
+    let result = ''
+    let currentPtr = ptr
+    let charValue: number
     
-    // Parameter definitions based on anim_schema.h
-    const parameterDefs: { [key: number]: ParameterInfo } = {
-      2: { id: 2, name: 'phase', type: 'range', min: -6.283, max: 6.283, default: 0 },
-      3: { id: 3, name: 'width', type: 'int', min: 1, max: 8, default: 3 },
-      4: { id: 4, name: 'branch', type: 'bool', min: 0, max: 1, default: 0 },
-      5: { id: 5, name: 'invert', type: 'bool', min: 0, max: 1, default: 0 },
-      6: { id: 6, name: 'level', type: 'range', min: 0, max: 1, default: 0.5 },
-      7: { id: 7, name: 'singleIndex', type: 'int', min: 0, max: 63, default: 0 }
-    }
+    // Read characters until we hit null terminator (0)
+    do {
+      charValue = mod._read_uint8(currentPtr)
+      if (charValue === 0) break
+      result += String.fromCharCode(charValue)
+      currentPtr++
+    } while (charValue !== 0)
     
-    // Animation parameter mappings (speed is global, not included here)
-    const animationParams: { [key: number]: number[] } = {
-      0: [6],     // Static: level
-      1: [2, 4, 5],    // Wave: phase, branch, invert (speed is global)
-      2: [2, 4],       // Pulse: phase, branch (speed is global)
-      3: [3, 4],       // Chase: width, branch (speed is global)
-      4: [7]           // Single: singleIndex (speed is global)
-    }
-    
+    return result
+  }
+
+  // Load animation definitions dynamically from WASM
+  const loadAnimations = async (mod: WASMModule): Promise<AnimationInfo[]> => {
+    const animCount = mod._anim_count()
     const animations: AnimationInfo[] = []
     
-    for (const staticAnim of staticAnimations) {
-      const paramIds = animationParams[staticAnim.index] || []
-      const parameters: ParameterInfo[] = []
-      
-      for (const paramId of paramIds) {
-        const paramInfo = parameterDefs[paramId]
-        if (paramInfo) {
-          parameters.push(paramInfo)
+    // Allocate memory for string buffers
+    const nameBufferSize = 64
+    const nameBufferPtr = mod._malloc(nameBufferSize)
+    
+    // Allocate memory for parameter info (3 floats for min, max, default)
+    const minMaxBufferPtr = mod._malloc(12) // 3 * 4 bytes for floats
+    const typeBufferPtr = mod._malloc(1) // 1 byte for type
+    
+    try {
+      for (let i = 0; i < animCount; i++) {
+        // Get animation name
+        mod._anim_name_safe(i, nameBufferPtr, nameBufferSize)
+        
+        // Read string from memory using helper function
+        const name = readStringFromMemory(mod, nameBufferPtr)
+        
+        // Get parameters for this animation
+        const paramCount = mod._anim_param_count(i)
+        const parameters: ParameterInfo[] = []
+        
+        for (let j = 0; j < paramCount; j++) {
+          const paramId = mod._anim_param_id(i, j)
+          
+          // Get parameter name
+          mod._param_name_safe(paramId, nameBufferPtr, nameBufferSize)
+          
+          // Read parameter name from memory
+          const paramName = readStringFromMemory(mod, nameBufferPtr)
+          
+          // Get parameter info - use separate buffer for numeric values
+          mod._param_info(paramId, nameBufferPtr, minMaxBufferPtr, minMaxBufferPtr + 4, minMaxBufferPtr + 8, typeBufferPtr)
+          
+          // Read values from memory using helper functions (use float, not double)
+          const min = mod._read_float(minMaxBufferPtr)
+          const max = mod._read_float(minMaxBufferPtr + 4)
+          const def = mod._read_float(minMaxBufferPtr + 8)
+          const type = mod._read_int8(typeBufferPtr)
+          
+          // Map parameter type
+          let paramType: 'bool' | 'range' | 'int' | 'enum' = 'range'
+          switch (type) {
+            case 0: paramType = 'bool'; break
+            case 1: paramType = 'range'; break
+            case 2: paramType = 'int'; break
+            case 3: paramType = 'enum'; break
+          }
+          
+          parameters.push({
+            id: paramId,
+            name: paramName,
+            type: paramType,
+            min,
+            max,
+            default: def
+          })
         }
+        
+        animations.push({
+          index: i,
+          name,
+          parameters
+        })
       }
-      
-      animations.push({
-        index: staticAnim.index,
-        name: staticAnim.name,
-        parameters
-      })
+    } catch (error) {
+      console.error('Error loading animations dynamically:', error)
+      throw error
+    } finally {
+      // Free allocated memory
+      mod._free(nameBufferPtr)
+      mod._free(minMaxBufferPtr)
+      mod._free(typeBufferPtr)
     }
     
     return animations
@@ -163,14 +207,29 @@ const App = () => {
         setRightValues(new Float32Array(total))
         
         // Load animation definitions
-        const anims = await loadAnimations()
+        const anims = await loadAnimations(mod)
         setAnimations(anims)
         
-        // Set default parameters for initial animations
-        mod._param_set(1, 3.0) // global speed
-        mod._param_set(2, 0.0) // phase for wave animation
-        mod._param_set(4, 1.0) // branch for wave animation
-        mod._param_set(5, 0.0) // invert for wave animation
+        // Initialize parameter states with defaults from anim_schema.h
+        const defaultLeftParams: {[key: number]: number} = {}
+        const defaultRightParams: {[key: number]: number} = {}
+        
+        // Set global speed parameter
+        mod._param_set(1, 3.0)
+        defaultLeftParams[1] = 3.0
+        defaultRightParams[1] = 3.0
+        
+        // Initialize all parameters with their defaults from the loaded animations
+        anims.forEach(anim => {
+          anim.parameters.forEach(param => {
+            defaultLeftParams[param.id] = param.default
+            defaultRightParams[param.id] = param.default
+            mod._param_set(param.id, param.default)
+          })
+        })
+        
+        setLeftParams(defaultLeftParams)
+        setRightParams(defaultRightParams)
         
       } catch (error) {
         console.error('Failed to load WASM module:', error)
@@ -189,10 +248,7 @@ const App = () => {
         const currentTime = (Date.now() - startTimeRef.current) / 1000
         const t = currentTime
 
-        // Set parameters for left tree and evaluate
-        Object.entries(leftParams).forEach(([paramId, value]) => {
-          module._param_set(parseInt(paramId), value)
-        })
+        // Evaluate left tree (parameters are already set by user interactions)
         module._anim_eval2_global(leftAnimation, t)
         const newLeftValues = new Float32Array(totalLeds)
         for (let i = 0; i < totalLeds; i++) {
@@ -200,10 +256,7 @@ const App = () => {
         }
         setLeftValues(newLeftValues)
 
-        // Set parameters for right tree and evaluate
-        Object.entries(rightParams).forEach(([paramId, value]) => {
-          module._param_set(parseInt(paramId), value)
-        })
+        // Evaluate right tree (parameters are already set by user interactions)
         module._anim_eval2_global(rightAnimation, t)
         const newRightValues = new Float32Array(totalLeds)
         for (let i = 0; i < totalLeds; i++) {
@@ -222,7 +275,7 @@ const App = () => {
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [module, isPaused, leftAnimation, rightAnimation, totalLeds, leftParams, rightParams])
+  }, [module, isPaused, leftAnimation, rightAnimation, totalLeds])
 
   const handleLeftAnimationChange = (animationIndex: number) => {
     setLeftAnimation(animationIndex)
@@ -244,11 +297,8 @@ const App = () => {
   }
 
   const getParameterValue = (paramId: number, tree: 'left' | 'right'): number => {
-    if (tree === 'left') {
-      return leftParams[paramId] || 0
-    } else {
-      return rightParams[paramId] || 0
-    }
+    const value = tree === 'left' ? leftParams[paramId] : rightParams[paramId]
+    return value ?? 0
   }
 
   const handleGlobalChange = (key: keyof GlobalState, value: any) => {
