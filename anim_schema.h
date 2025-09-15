@@ -46,31 +46,34 @@ PARAM_LIST(DECL_PID)
 static const ParamDef PARAMS[] PROGMEM = { PARAM_LIST(PARAM_DEF_ROW) };
 #undef PARAM_DEF_ROW
 
-// Animation param lists ADD ANIMATIONS HERE
-static const uint8_t A_STATIC[]  PROGMEM = { PID_LEVEL };
-static const uint8_t A_WAVE[]    PROGMEM = { PID_SPEED, PID_PHASE, PID_BRANCH, PID_INVERT };
-static const uint8_t A_PULSE[]   PROGMEM = { PID_SPEED, PID_PHASE, PID_BRANCH };
-static const uint8_t A_CHASE[]   PROGMEM = { PID_SPEED, PID_WIDTH, PID_BRANCH };
-static const uint8_t A_SINGLE[]  PROGMEM = { PID_SINGLE_IDX };
-static const uint8_t A_SPARKLE[] PROGMEM = { PID_SPEED, PID_RANDOM_MODE, PID_SPARKLE_MIN, PID_SPARKLE_MAX };
-static const uint8_t A_PERLIN[]  PROGMEM = { PID_SPEED, PID_WIDTH, PID_CAL_MIN, PID_CAL_MAX, PID_DELTA };
+// Animation lists via X-macro to keep a single source of truth (IDs use PID_* constants)
+// ANIM_ITEMS: INDEX, NAME, PARAM_ID_TOKENS...
+// Use numeric IDs for param references to simplify external codegen (e.g., embedding into HTML)
+#define ANIM_ITEMS(X) \
+  X(0, "Static",  6) /* LEVEL */ \
+  X(1, "Wave",    1, 2, 4, 5) /* SPEED, PHASE, BRANCH, INVERT */ \
+  X(2, "Pulse",   1, 2, 4) /* SPEED, PHASE, BRANCH */ \
+  X(3, "Chase",   1, 3, 4) /* SPEED, WIDTH, BRANCH */ \
+  X(4, "Single",  7) /* SINGLE_IDX */ \
+  X(5, "Sparkle", 1, 8, 26, 27) /* SPEED, RANDOM_MODE, SPARKLE_MIN, SPARKLE_MAX */ \
+  X(6, "Perlin",  1, 3, 23, 24, 25) /* SPEED, WIDTH, CAL_MIN, CAL_MAX, DELTA */
 
-static const AnimDef ANIMS[] PROGMEM = {
-  { 0, "Static",  A_STATIC,  sizeof(A_STATIC) },
-  { 1, "Wave",    A_WAVE,    sizeof(A_WAVE) },
-  { 2, "Pulse",   A_PULSE,   sizeof(A_PULSE) },
-  { 3, "Chase",   A_CHASE,   sizeof(A_CHASE) },
-  { 4, "Single",  A_SINGLE,  sizeof(A_SINGLE) },
-  { 5, "Sparkle", A_SPARKLE, sizeof(A_SPARKLE) },
-  { 6, "Perlin",  A_PERLIN,  sizeof(A_PERLIN) }
-};
+// Define per-animation param ID arrays
+#define DEF_ANIM_PARAMS_ARRAY(INDEX, NAME, ...) static const uint8_t ANIM_PARAMS_##INDEX[] PROGMEM = { __VA_ARGS__ };
+ANIM_ITEMS(DEF_ANIM_PARAMS_ARRAY)
+#undef DEF_ANIM_PARAMS_ARRAY
+
+// Build ANIM_ITEMS table from the arrays above
+#define DEF_ANIM_ROW(INDEX, NAME, ...) { (uint8_t)(INDEX), NAME, ANIM_PARAMS_##INDEX, (uint8_t)sizeof(ANIM_PARAMS_##INDEX) },
+static const AnimDef ANIM_ITEMS[] PROGMEM = { ANIM_ITEMS(DEF_ANIM_ROW) };
+#undef DEF_ANIM_ROW
 
 inline const ParamDef* findParam(uint8_t id){
   for(size_t i=0;i<sizeof(PARAMS)/sizeof(PARAMS[0]);++i){ ParamDef tmp; memcpy_P(&tmp,&PARAMS[i],sizeof(tmp)); if(tmp.id==id) return &PARAMS[i]; }
   return nullptr;
 }
 inline const AnimDef* findAnim(uint8_t index){
-  for(size_t i=0;i<sizeof(ANIMS)/sizeof(ANIMS[0]);++i){ AnimDef tmp; memcpy_P(&tmp,&ANIMS[i],sizeof(tmp)); if(tmp.index==index) return &ANIMS[i]; }
+  for(size_t i=0;i<sizeof(ANIM_ITEMS)/sizeof(ANIM_ITEMS[0]);++i){ AnimDef tmp; memcpy_P(&tmp,&ANIM_ITEMS[i],sizeof(tmp)); if(tmp.index==index) return &ANIM_ITEMS[i]; }
   return nullptr;
 }
 inline uint8_t valueBytes(const ParamDef &pd){ if(pd.type==PT_BOOL) return 1; if(pd.bits<=8) return 1; if(pd.bits<=16) return 2; if(pd.bits<=24) return 3; return 4; }
@@ -107,4 +110,9 @@ inline float getParamField(const ParamSet &ps, uint8_t id){
 }
 } // namespace Anim
 
+#ifndef ANIM_SCHEMA_KEEP_PARAM_LIST
 #undef PARAM_LIST
+#endif
+#ifndef ANIM_SCHEMA_KEEP_ANIM_ITEMS
+#undef ANIM_ITEMS
+#endif

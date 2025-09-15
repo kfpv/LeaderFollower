@@ -386,8 +386,8 @@ struct Node {
       j += '}';
     }
     j += "],\"animations\":[";
-    for (size_t i=0;i<sizeof(ANIMS)/sizeof(ANIMS[0]); ++i){
-      AnimDef ad; memcpy_P(&ad, &ANIMS[i], sizeof(ad));
+    for (size_t i=0;i<sizeof(AnimSchema::ANIM_ITEMS)/sizeof(AnimSchema::ANIM_ITEMS[0]); ++i){
+      AnimDef ad; memcpy_P(&ad, &AnimSchema::ANIM_ITEMS[i], sizeof(ad));
       if (i) j += ','; j += '{';
       j += "\"index\":" + String(ad.index);
       j += ",\"name\":\"" + String(ad.name) + "\"";

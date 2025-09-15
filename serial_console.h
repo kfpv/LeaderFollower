@@ -146,8 +146,8 @@ class SerialConsole {
 
   void listAnimations(){
     Serial.println("Animations:");
-    for (size_t i=0;i<sizeof(AnimSchema::ANIMS)/sizeof(AnimSchema::ANIMS[0]); ++i){
-      AnimSchema::AnimDef ad; memcpy_P(&ad, &AnimSchema::ANIMS[i], sizeof(ad));
+    for (size_t i=0;i<sizeof(AnimSchema::ANIM_ITEMS)/sizeof(AnimSchema::ANIM_ITEMS[0]); ++i){
+      AnimSchema::AnimDef ad; memcpy_P(&ad, &AnimSchema::ANIM_ITEMS[i], sizeof(ad));
       Serial.print("  "); Serial.print(ad.index); Serial.print(": "); Serial.println(ad.name);
     }
   }

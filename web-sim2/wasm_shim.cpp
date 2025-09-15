@@ -27,7 +27,7 @@ uint16_t anim_total_leds() { return Anim::TOTAL_LEDS; }
 
 // Get animation count
 uint8_t anim_count() { 
-  return sizeof(AnimSchema::ANIMS) / sizeof(AnimSchema::ANIMS[0]); 
+  return sizeof(AnimSchema::ANIM_ITEMS) / sizeof(AnimSchema::ANIM_ITEMS[0]); 
 }
 
 // Get animation name by index (returns pointer to static string)

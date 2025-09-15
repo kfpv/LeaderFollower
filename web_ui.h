@@ -58,18 +58,54 @@ footer{margin-top:28px;font-size:.65rem;opacity:.55;text-align:center}
   <footer>Dynamic UI prototype – parameters generated from schema.</footer>
 </div>
 <script>
+// Embedded schema derived from anim_schema.h and animations.h
+const SCHEMA = {
+  params: [
+    {id:1,  name:"speed",       type:1, min:0.0,    max:12.0,  def:3.0,  bits:12},
+    {id:2,  name:"phase",       type:1, min:-6.283, max:6.283, def:0.0,  bits:12},
+    {id:3,  name:"width",       type:2, min:1,      max:8,     def:3,    bits:4},
+    {id:4,  name:"branch",      type:0, min:0,      max:1,     def:0,    bits:1},
+    {id:5,  name:"invert",      type:0, min:0,      max:1,     def:0,    bits:1},
+    {id:6,  name:"level",       type:1, min:0.0,    max:1.0,   def:0.5,  bits:8},
+    {id:7,  name:"singleIndex", type:2, min:0,      max:63,    def:0,    bits:6},
+    {id:8,  name:"random",      type:0, min:0,      max:1,     def:0,    bits:1},
+    {id:20, name:"globalSpeed", type:1, min:0.0,    max:4.0,   def:1.0,  bits:10},
+    {id:21, name:"globalMin",   type:1, min:0.0,    max:1.0,   def:0.0,  bits:8},
+    {id:22, name:"globalMax",   type:1, min:0.0,    max:1.0,   def:1.0,  bits:8},
+    {id:23, name:"calMin",      type:1, min:0.0,    max:1.0,   def:0.0,  bits:8},
+    {id:24, name:"calMax",      type:1, min:0.0,    max:0.84,  def:0.84, bits:10},
+    {id:25, name:"delta",       type:1, min:0.0,    max:5.0,   def:2.0,  bits:10},
+    {id:26, name:"sparkMin",    type:2, min:0,      max:63,    def:8,    bits:6},
+    {id:27, name:"sparkMax",    type:2, min:0,      max:63,    def:12,   bits:6}
+  ],
+  animations: [
+    { index:0, name:"Static",  params:[6] },
+    { index:1, name:"Wave",    params:[1,2,4,5] },
+    { index:2, name:"Pulse",   params:[1,2,4] },
+    { index:3, name:"Chase",   params:[1,3,4] },
+    { index:4, name:"Single",  params:[7] },
+    { index:5, name:"Sparkle", params:[1,8,26,27] },
+    { index:6, name:"Perlin",  params:[1,3,23,24,25] }
+  ]
+};
+</script>
+<script>
 function $(id){return document.getElementById(id);} // small helper
 
 const tabs=[{btn:'tabLeader',panel:'panelLeader'},{btn:'tabFollower',panel:'panelFollower'},{btn:'tabGlobals',panel:'panelGlobals'}];
 tabs.forEach(t=>{ $(t.btn).onclick=()=>{ tabs.forEach(x=>{ $(x.btn).classList.toggle('active',x.btn===t.btn); $(x.panel).classList.toggle('hide',x.btn!==t.btn); }); }; });
 
-let schema=null; // fetched JSON
+let schema=null; // local schema
 const paramMap=new Map();
 
-async function fetchSchema(){
-  if(schema) return schema;
-  const r = await fetch('/api/schema');
-  schema = await r.json();
+function normalizeNumber(v){ return typeof v==='number'? v : parseFloat(v); }
+async function buildSchema(){
+  if (schema) return schema;
+  // Clone and normalize
+  schema = {
+    params: SCHEMA.params.map(p=>({ id:+p.id, name:p.name, type:+p.type, min:normalizeNumber(p.min), max:normalizeNumber(p.max), def:normalizeNumber(p.def), bits:+p.bits })),
+    animations: SCHEMA.animations.map(a=>({ index:+a.index, name:a.name, params:a.params.map(x=>+x) }))
+  };
   schema.params.forEach(p=>paramMap.set(p.id,p));
   return schema;
 }
@@ -155,7 +191,7 @@ async function send(role, animIndex, params, globals){
 }
 
 async function init(){
-  await fetchSchema();
+  await buildSchema();
   buildAnimSelect($('L_anim')); buildAnimSelect($('F_anim'));
   buildControlsFor('L'); buildControlsFor('F'); buildGlobals();
   $('applyLeader').onclick=()=>{ const g=gatherGlobals(); const L=gather('L'); send(0,L.animIndex,L.params,g); };
