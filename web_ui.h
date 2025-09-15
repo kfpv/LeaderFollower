@@ -1,6 +1,10 @@
 // Auto-generated dynamic web UI (data-driven animation controls) — Vivid Controls layout
 #pragma once
-#include <Arduino.h>
+#if defined(__EMSCRIPTEN__) || defined(_LP64)
+  #include "web-sim2/Arduino.h"
+#else
+  #include <Arduino.h>
+#endif
 #include "anim_schema.h"
 
 // Served from PROGMEM to reduce RAM usage.
@@ -94,7 +98,8 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
     </div>
   </header>
   <div class="container">
-    <div class="card">
+    <div class="card" id="globalsCard">
+      <div class="pill">Globals</div>
       <div id="G_paramContainer"></div>
     </div>
     <div class="tabs">
@@ -255,9 +260,10 @@ function buildControlsFor(prefix){
 }
 
 function buildGlobals(){
-  const gc=$('G_paramContainer'); gc.innerHTML=''; if(!schema) return;
-  const used=new Set(); (schema.animations||[]).forEach(a=>{ (a.params||[]).forEach(pid=>used.add(pid)); });
-  const globals=(schema.params||[]).filter(p=>p&&!used.has(p.id));
+  const gc=$('G_paramContainer'); if(!gc) return; gc.innerHTML=''; if(!schema) return;
+  // Dynamic globals (optional) appended after static three.
+  const used=new Set(); (schema.animations||[]).forEach(a=>{ if(!a) return; (a.params||[]).forEach(pid=>used.add(pid)); });
+  const globals=(schema.params||[]).filter(p=>p&&!used.has(p.id) && !/global speed|min brightness|max brightness/i.test(p.name));
   globals.sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   globals.forEach(pd=>gc.appendChild(createParamControl(pd,'G_')));
 }
@@ -275,9 +281,8 @@ function gather(prefix){
 
 function gatherGlobals(){
   const params=[]; document.querySelectorAll('#G_paramContainer [data-role="value-input"]').forEach(el=>{
-    const pid=parseInt(el.dataset.pid,10); let v=(el.type==='checkbox')?(el.checked?1:0):parseFloat(el.value); params.push({id:pid,value:v});
-  }); return params;
-}
+    const pid=parseInt(el.dataset.pid,10); let v=(el.type==='checkbox')?(el.checked?1:0):parseFloat(el.value); if(!Number.isNaN(v)) params.push({id:pid,value:v});
+  }); return params; }
 
 async function send(role, animIndex, params, globals){
   try{
@@ -364,11 +369,15 @@ async function init(){
   buildControlsFor('L'); buildControlsFor('F'); buildGlobals();
   initTabs(); buildGrids(); setMode('normal');
   $('apply').addEventListener('click', async ()=>{
-    const g=gatherGlobals(); const L=gather('L'); const F=gather('F');
-    await send(0,L.animIndex,L.params,g);
-    await new Promise(r=>setTimeout(r,40));
-    await send(1,F.animIndex,F.params,g);
-    const st=$('status'); st.textContent='applied'; setTimeout(()=>st.textContent='\u00a0',1600);
+    try {
+      const g=gatherGlobals(); const L=gather('L'); const F=gather('F');
+      console.log('Applying CFG2', {globals:g, leader:L, follower:F});
+      // Send leader then follower
+      await send(0,L.animIndex,L.params,g);
+      await new Promise(r=>setTimeout(r,40));
+      await send(1,F.animIndex,F.params,g);
+      const st=$('status'); st.textContent='applied'; setTimeout(()=>st.textContent='\u00a0',1600);
+    } catch(err){ console.error(err); const st=$('status'); st.textContent='error'; st.style.background='#ef4444'; }
   });
   loadState();
 }
