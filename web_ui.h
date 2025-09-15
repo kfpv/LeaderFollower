@@ -67,7 +67,7 @@ footer{margin-top:28px;font-size:.65rem;opacity:.55;text-align:center}
 </div>
 <script>
 // Schema generated dynamically from anim_schema.h using X-macros
-const SCHEMA_JSON = ")HTML";
+const SCHEMA_JSON = ')HTML";
 
   // Generate the JSON schema string
 static const char ANIM_SCHEMA_JSON[] PROGMEM = 
@@ -77,7 +77,7 @@ static const char ANIM_SCHEMA_JSON[] PROGMEM =
     ANIM_ITEMS(ANIM_JSON_COMMA)
     "null]}";
   
-static const char INDEX_HTML_SUFFIX[] PROGMEM = R"HTML(";
+static const char INDEX_HTML_SUFFIX[] PROGMEM = R"HTML(';
 const SCHEMA = JSON.parse(SCHEMA_JSON);
 <script>
 function $(id){return document.getElementById(id);} // small helper
