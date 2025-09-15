@@ -12,7 +12,7 @@ bun install
 
 ## development
 
-### rebuild After Header Changes
+### rebuild after header changes
 
 if you make changes to `animations.h` or `anim_schema.h`, rebuild with:
 
@@ -20,9 +20,7 @@ if you make changes to `animations.h` or `anim_schema.h`, rebuild with:
 bun run build-wasm
 ```
 
-### run the Development Server
-
-Start the website server:
+### run the development server
 
 ```bash
 bun run dev
