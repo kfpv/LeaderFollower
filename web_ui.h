@@ -167,7 +167,7 @@ function createParamControl(pd, prefix){
 
 function buildAnimSelect(selectEl){
   selectEl.innerHTML='';
-  schema.animations.forEach(a=>{ const o=document.createElement('option'); o.value=a.index; o.textContent=a.name; selectEl.appendChild(o); });
+  schema.animations.forEach(a=>{ if (a) { const o=document.createElement('option'); o.value=a.index; o.textContent=a.name; selectEl.appendChild(o); } });
 }
 
 function buildControlsFor(prefix){
