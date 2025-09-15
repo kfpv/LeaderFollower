@@ -1,8 +1,3 @@
-// Auto-generated dynamic web UI (data-driven animation controls)
-#pragma once
-#include <Arduino.h>
-#include "anim_schema.h"
-
 // Auto-generated dynamic web UI (data-driven animation controls) — Vivid Controls layout
 #pragma once
 #include <Arduino.h>
