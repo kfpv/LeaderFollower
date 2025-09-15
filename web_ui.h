@@ -58,8 +58,6 @@ footer{margin-top:28px;font-size:.65rem;opacity:.55;text-align:center}
   <footer>Dynamic UI prototype – parameters generated from schema.</footer>
 </div>
 <script>
-const GLOBAL_PARAM_IDS = [20,21,22]; // globalSpeed, globalMin, globalMax (must match schema)
-
 function $(id){return document.getElementById(id);} // small helper
 
 const tabs=[{btn:'tabLeader',panel:'panelLeader'},{btn:'tabFollower',panel:'panelFollower'},{btn:'tabGlobals',panel:'panelGlobals'}];
@@ -120,7 +118,15 @@ function buildControlsFor(prefix){
 
 function buildGlobals(){
   const gc=$('G_paramContainer'); gc.innerHTML='';
-  GLOBAL_PARAM_IDS.forEach(pid=>{ const pd=paramMap.get(pid); if(pd) gc.appendChild(createParamControl(pd,'G_')); });
+  if (!schema) return;
+  // Build a set of param IDs used by any animation
+  const used=new Set();
+  schema.animations.forEach(a=>{ (a.params||[]).forEach(pid=>used.add(pid)); });
+  // Globals are params not referenced by any animation
+  const globals = schema.params.filter(p=>!used.has(p.id));
+  // Stable sort by name for nicer UI
+  globals.sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  globals.forEach(pd=>{ gc.appendChild(createParamControl(pd,'G_')); });
 }
 
 function gather(prefix){
