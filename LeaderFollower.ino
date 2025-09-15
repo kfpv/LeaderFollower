@@ -10,6 +10,7 @@
 #include <WebServer.h>
 #include "web_ui.h"
 #endif
+#include "serial_console.h"
 
 extern CommunicationInterface* createCommunication();
 extern LEDInterface* createLEDs();
@@ -59,6 +60,7 @@ struct Node {
   // Web UI (leader only)
   WebServer *server{nullptr};
 #endif
+  SerialConsole console;
 
   void begin() {
   #ifdef ARDUINO
@@ -77,24 +79,22 @@ struct Node {
     setupWiFiAndServer();
   }
 #endif
+  if (isLeader) initConsole();
   }
 
   void tick() {
     comm->loop();
+  if (isLeader) console.loop();
     Message msg;
   while (comm->poll(msg)) {
       if (!isLeader && msg.type == Message::SYNC) {
         // Follower: ACK and apply time sync offset if needed
-    comm->sendAck(msg.frame);
+        comm->sendAck(msg.frame);
   #ifdef ARDUINO
   lastSyncRecvMs = millis();
+    int32_t now32 = (int32_t)millis();
   #else
-  lastSyncRecvMs = (uint32_t)0; // placeholder for non-arduino build
-  #endif
-  #ifdef ARDUINO
-  int32_t now32 = (int32_t)millis();
-  #else
-  int32_t now32 = 0;
+  lastSyncRecvMs = 0; int32_t now32 = 0;
   #endif
         int32_t newOffset = (int32_t)msg.time_ms - now32;
         int32_t diff = newOffset - timeOffsetMs;
@@ -166,31 +166,9 @@ struct Node {
         globalSpeed = msg.cfg_globalSpeed;
   globalMin = msg.cfg_min;
   globalMax = msg.cfg_max;
-  #ifdef ARDUINO
-  Serial.println("Applied follower CFG from leader");
-  #endif
-      } else if (!isLeader && msg.type == Message::CFG2) {
-        // Dynamic configuration: map param IDs to followerCfg / globals
-        followerCfg.animIndex = msg.cfg2_animIndex;
-        // Apply all params directly to followerParams
-        for (uint8_t i=0;i<msg.cfg2_paramCount;i++) {
-          Anim::setParamField(followerParams, msg.cfg2_paramIds[i], msg.cfg2_paramValues[i]);
-        }
-        for (uint8_t i=0;i<msg.cfg2_globalCount;i++) {
-          Anim::setParamField(followerParams, msg.cfg2_globalIds[i], msg.cfg2_globalValues[i]);
-        }
-        // Derive legacy followerCfg & globals for rendering compatibility
-        followerCfg.speed = followerParams.speed;
-        followerCfg.phase = followerParams.phase;
-        followerCfg.width = (followerCfg.animIndex==4) ? followerParams.singleIndex : followerParams.width;
-        followerCfg.branchMode = followerParams.branch;
-        followerCfg.invert = followerParams.invert;
-        globalSpeed = followerParams.globalSpeed;
-        globalMin = followerParams.globalMin;
-        globalMax = followerParams.globalMax;
-  #ifdef ARDUINO
-  Serial.println("Applied follower CFG2 from leader");
-  #endif
+    #ifdef ARDUINO
+    Serial.println("Applied follower CFG from leader");
+    #endif
       }
     }
   #ifdef ARDUINO
@@ -310,6 +288,24 @@ struct Node {
         Anim::wave(t, Anim::TOTAL_LEDS, cfg.speed, cfg.phase, cfg.branchMode, cfg.invert, out);
         break;
     }
+  }
+
+  // --- Serial console ---
+  static void cbSendSync(void* u){ Node* self = reinterpret_cast<Node*>(u); uint32_t now = millis(); uint32_t frame = now/33; self->comm->sendSync(now, frame, Proto::encodeAnimCode(self->leaderCfg.animIndex)); }
+  
+  static void cbSetBrightness(void* u, float b){ Node* self = reinterpret_cast<Node*>(u); self->brightness = constrain(b,0.0f,1.0f); self->leds->setBrightness(self->brightness); }
+  static void cbApplyFollowerCfg2(void* u, uint8_t animIndex, const uint8_t* ids, const float* vals, uint8_t count){
+    Node* self = reinterpret_cast<Node*>(u);
+    // Update followerParams
+    self->followerCfg.animIndex = animIndex; for(uint8_t i=0;i<count;i++){ Anim::setParamField(self->followerParams, ids[i], vals[i]); }
+    // derive legacy subset
+    self->followerCfg.speed = self->followerParams.speed; self->followerCfg.phase = self->followerParams.phase; self->followerCfg.width = (animIndex==4)? self->followerParams.singleIndex : self->followerParams.width; self->followerCfg.branchMode = self->followerParams.branch; self->followerCfg.invert = self->followerParams.invert;
+    self->globalSpeed = self->followerParams.globalSpeed; self->globalMin = self->followerParams.globalMin; self->globalMax = self->followerParams.globalMax;
+    // Send all parameters via CFG2
+    self->sendAllParams(1, animIndex, self->followerParams);
+  }
+  void initConsole(){
+    ConsoleAdapter a; a.user=this; a.sendSync=&cbSendSync; a.setBrightness=&cbSetBrightness; a.applyFollowerCfg2=&cbApplyFollowerCfg2; console.begin(a);
   }
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -502,8 +498,4 @@ void setup(){
   node.begin();
 }
 
-void loop(){ node.tick();
-#ifdef ARDUINO
-  delay(10);
-#endif
-}
+void loop(){ node.tick(); delay(10); }
