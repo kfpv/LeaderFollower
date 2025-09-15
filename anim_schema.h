@@ -16,6 +16,33 @@ enum ParamType : uint8_t { PT_BOOL=0, PT_RANGE=1, PT_INT=2, PT_ENUM=3 };
 struct ParamDef { uint8_t id; ParamType type; const char *name; float minVal; float maxVal; float defVal; uint8_t bits; };
 struct AnimDef { uint8_t index; const char *name; const uint8_t *paramIds; uint8_t paramCount; };
 
+
+// Define JSON generation macros for web UI
+#define PARAM_JSON_ITEM(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) \
+  "{\"id\":" #ID ",\"name\":\"" UI "\",\"type\":" #TYPE ",\"min\":" #MIN ",\"max\":" #MAX ",\"def\":" #DEF ",\"bits\":" #BITS "}"
+
+#define ANIM_JSON_ITEM(INDEX, NAME, ...) \
+  "{\"index\":" #INDEX ",\"name\":\"" NAME "\",\"params\":[" #__VA_ARGS__ "]}"
+
+#define PARAM_JSON_COMMA(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) \
+  PARAM_JSON_ITEM(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) ","
+
+#define ANIM_JSON_COMMA(INDEX, NAME, ...) \
+  ANIM_JSON_ITEM(INDEX, NAME, __VA_ARGS__) ","
+
+// Also define JavaScript-compatible versions
+#define PARAM_JS_JSON(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) \
+  "{\"id\":" #ID ",\"name\":\"" UI "\",\"type\":" #TYPE ",\"min\":" #MIN ",\"max\":" #MAX ",\"def\":" #DEF ",\"bits\":" #BITS "}"
+
+#define ANIM_JS_JSON(INDEX, NAME, ...) \
+  "{\"index\":" #INDEX ",\"name\":\"" NAME "\",\"params\":[" #__VA_ARGS__ "]}"
+
+#define PARAM_JS_JSON_COMMA(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) \
+  PARAM_JS_JSON(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) ","
+
+#define ANIM_JS_JSON_COMMA(INDEX, NAME, ...) \
+  ANIM_JS_JSON(INDEX, NAME, __VA_ARGS__) ","
+
 // X-macro: NAME, ID, TYPE, UI_NAME, CTYPE, FIELD, MIN, MAX, DEF, BITS
 // ADD PARAMS HERE
 #define PARAM_LIST(X) \
@@ -57,6 +84,8 @@ static const ParamDef PARAMS[] PROGMEM = { PARAM_LIST(PARAM_DEF_ROW) };
   X(4, "Single",  7) /* SINGLE_IDX */ \
   X(5, "Sparkle", 1, 8, 26, 27) /* SPEED, RANDOM_MODE, SPARKLE_MIN, SPARKLE_MAX */ \
   X(6, "Perlin",  1, 3, 23, 24, 25) /* SPEED, WIDTH, CAL_MIN, CAL_MAX, DELTA */
+
+
 
 // Define per-animation param ID arrays
 #define DEF_ANIM_PARAMS_ARRAY(INDEX, NAME, ...) static const uint8_t ANIM_PARAMS_##INDEX[] PROGMEM = { __VA_ARGS__ };
@@ -109,10 +138,3 @@ inline float getParamField(const ParamSet &ps, uint8_t id){
   }
 }
 } // namespace Anim
-
-#ifndef ANIM_SCHEMA_KEEP_PARAM_LIST
-#undef PARAM_LIST
-#endif
-#ifndef ANIM_SCHEMA_KEEP_ANIM_ITEMS
-#undef ANIM_ITEMS
-#endif

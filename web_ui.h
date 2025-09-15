@@ -9,71 +9,14 @@
 //   POST /api/cfg2  -> accepts JSON { role:0|1, animIndex, params:[{id,value}], globals:[{id,value}] }
 // (Adjust to your server implementation; this UI only issues fetch calls.)
 
-// Since anim_schema.h undefines the X-macros after use, we need to redefine them here
-// Copy the macro definitions from anim_schema.h for JSON generation
-#define PARAM_LIST(X) \
-  X(SPEED,        1,  PT_RANGE, "speed",       float,   speed,        0.0f,   12.0f,  3.0f, 12) \
-  X(PHASE,        2,  PT_RANGE, "phase",       float,   phase,       -6.283f, 6.283f, 0.0f, 12) \
-  X(WIDTH,        3,  PT_INT,   "width",       uint8_t, width,        1.0f,    8.0f,  3.0f, 4 ) \
-  X(BRANCH,       4,  PT_BOOL,  "branch",      bool,    branch,       0.0f,    1.0f,  0.0f, 1 ) \
-  X(INVERT,       5,  PT_BOOL,  "invert",      bool,    invert,       0.0f,    1.0f,  0.0f, 1 ) \
-  X(LEVEL,        6,  PT_RANGE, "level",       float,   level,        0.0f,    1.0f,  0.5f, 8 ) \
-  X(SINGLE_IDX,   7,  PT_INT,   "singleIndex", uint8_t, singleIndex,  0.0f,   63.0f,  0.0f, 6 ) \
-  X(RANDOM_MODE,  8,  PT_BOOL,  "random",      bool,    randomMode,   0.0f,    1.0f,  0.0f, 1 ) \
-  X(GLOBAL_SPEED, 20, PT_RANGE, "globalSpeed", float,   globalSpeed,  0.0f,    4.0f,  1.0f, 10) \
-  X(GLOBAL_MIN,   21, PT_RANGE, "globalMin",   float,   globalMin,    0.0f,    1.0f,  0.0f, 8 ) \
-  X(GLOBAL_MAX,   22, PT_RANGE, "globalMax",   float,   globalMax,    0.0f,    1.0f,  1.0f, 8 ) \
-  X(CAL_MIN,      23, PT_RANGE, "calMin",      float,   calMin,       0.0f,    1.0f,  0.0f, 8 ) \
-  X(CAL_MAX,      24, PT_RANGE, "calMax",      float,   calMax,       0.0f,    1.0f,  0.84f,10) \
-  X(DELTA,        25, PT_RANGE, "delta",       float,   delta,        0.0f,    5.0f,  2.0f, 10) \
-  X(SPARKLE_MIN,  26, PT_INT,   "sparkMin",    uint8_t, minSparkles,  0.0f,   63.0f,  8.0f, 6 ) \
-  X(SPARKLE_MAX,  27, PT_INT,   "sparkMax",    uint8_t, maxSparkles,  0.0f,   63.0f, 12.0f, 6 )
-
-#define ANIM_ITEMS(X) \
-  X(0, "Static",  6) \
-  X(1, "Wave",    1, 2, 4, 5) \
-  X(2, "Pulse",   1, 2, 4) \
-  X(3, "Chase",   1, 3, 4) \
-  X(4, "Single",  7) \
-  X(5, "Sparkle", 1, 8, 26, 27) \
-  X(6, "Perlin",  1, 3, 23, 24, 25)
-
-// Include the ParamType constants we need
-using namespace AnimSchema;
-
-// Define JSON generation macros for parameters
-#define PARAM_JSON(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) \
-  "{\"id\":" #ID ",\"name\":\"" UI "\",\"type\":" #TYPE ",\"min\":" #MIN ",\"max\":" #MAX ",\"def\":" #DEF ",\"bits\":" #BITS "}"
-
-// Define JSON generation macros for animations  
-#define ANIM_JSON(INDEX, NAME, ...) \
-  "{\"index\":" #INDEX ",\"name\":\"" NAME "\",\"params\":[" #__VA_ARGS__ "]}"
-
-// Helper to add commas between items - we'll use string literal concatenation
-#define COMMA_PARAM_JSON(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) \
-  PARAM_JSON(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) ","
-
-#define COMMA_ANIM_JSON(INDEX, NAME, ...) \
-  ANIM_JSON(INDEX, NAME, __VA_ARGS__) ","
-
-// Generate the embedded schema JSON dynamically using X-macros
-static const char SCHEMA_JSON[] PROGMEM = 
-  "{\"params\":["
-    PARAM_LIST(COMMA_PARAM_JSON)
-    "null],\"animations\":["
-    ANIM_ITEMS(COMMA_ANIM_JSON)
-    "null]}";
-
-// Clean up the macros
-#undef PARAM_LIST
-#undef ANIM_ITEMS
-#undef PARAM_JSON
-#undef ANIM_JSON
-#undef COMMA_PARAM_JSON
-#undef COMMA_ANIM_JSON
+// Generate JavaScript with embedded schema - we need to reconstruct the JSON in JavaScript
+// since we can't directly embed C string literals into JS within raw string literals
 
 
-static const char INDEX_HTML[] PROGMEM = R"HTML(
+
+
+// Generate the complete HTML with embedded schema
+static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Leader Controller</title>
@@ -123,10 +66,19 @@ footer{margin-top:28px;font-size:.65rem;opacity:.55;text-align:center}
   <footer>Dynamic UI prototype – parameters generated from schema.</footer>
 </div>
 <script>
-// Embedded schema derived from anim_schema.h using X-macros
-const SCHEMA_JSON = "{\"params\":[{\"id\":1,\"name\":\"speed\",\"type\":1,\"min\":0.0,\"max\":12.0,\"def\":3.0,\"bits\":12},{\"id\":2,\"name\":\"phase\",\"type\":1,\"min\":-6.283,\"max\":6.283,\"def\":0.0,\"bits\":12},{\"id\":3,\"name\":\"width\",\"type\":2,\"min\":1,\"max\":8,\"def\":3,\"bits\":4},{\"id\":4,\"name\":\"branch\",\"type\":0,\"min\":0,\"max\":1,\"def\":0,\"bits\":1},{\"id\":5,\"name\":\"invert\",\"type\":0,\"min\":0,\"max\":1,\"def\":0,\"bits\":1},{\"id\":6,\"name\":\"level\",\"type\":1,\"min\":0.0,\"max\":1.0,\"def\":0.5,\"bits\":8},{\"id\":7,\"name\":\"singleIndex\",\"type\":2,\"min\":0,\"max\":63,\"def\":0,\"bits\":6},{\"id\":8,\"name\":\"random\",\"type\":0,\"min\":0,\"max\":1,\"def\":0,\"bits\":1},{\"id\":20,\"name\":\"globalSpeed\",\"type\":1,\"min\":0.0,\"max\":4.0,\"def\":1.0,\"bits\":10},{\"id\":21,\"name\":\"globalMin\",\"type\":1,\"min\":0.0,\"max\":1.0,\"def\":0.0,\"bits\":8},{\"id\":22,\"name\":\"globalMax\",\"type\":1,\"min\":0.0,\"max\":1.0,\"def\":1.0,\"bits\":8},{\"id\":23,\"name\":\"calMin\",\"type\":1,\"min\":0.0,\"max\":1.0,\"def\":0.0,\"bits\":8},{\"id\":24,\"name\":\"calMax\",\"type\":1,\"min\":0.0,\"max\":0.84,\"def\":0.84,\"bits\":10},{\"id\":25,\"name\":\"delta\",\"type\":1,\"min\":0.0,\"max\":5.0,\"def\":2.0,\"bits\":10},{\"id\":26,\"name\":\"sparkMin\",\"type\":2,\"min\":0,\"max\":63,\"def\":8,\"bits\":6},{\"id\":27,\"name\":\"sparkMax\",\"type\":2,\"min\":0,\"max\":63,\"def\":12,\"bits\":6}],\"animations\":[{\"index\":0,\"name\":\"Static\",\"params\":[6]},{\"index\":1,\"name\":\"Wave\",\"params\":[1,2,4,5]},{\"index\":2,\"name\":\"Pulse\",\"params\":[1,2,4]},{\"index\":3,\"name\":\"Chase\",\"params\":[1,3,4]},{\"index\":4,\"name\":\"Single\",\"params\":[7]},{\"index\":5,\"name\":\"Sparkle\",\"params\":[1,8,26,27]},{\"index\":6,\"name\":\"Perlin\",\"params\":[1,3,23,24,25]}]}";
+// Schema generated dynamically from anim_schema.h using X-macros
+const SCHEMA_JSON = ")HTML";
+
+  // Generate the JSON schema string
+static const char ANIM_SCHEMA_JSON[] PROGMEM = 
+  "{\"params\":["
+    PARAM_LIST(PARAM_JSON_COMMA)
+    "null],\"animations\":["
+    ANIM_ITEMS(ANIM_JSON_COMMA)
+    "null]}";
+  
+static const char INDEX_HTML_SUFFIX[] PROGMEM = R"HTML(";
 const SCHEMA = JSON.parse(SCHEMA_JSON);
-</script>
 <script>
 function $(id){return document.getElementById(id);} // small helper
 
@@ -139,8 +91,9 @@ const paramMap=new Map();
 function normalizeNumber(v){ return typeof v==='number'? v : parseFloat(v); }
 async function buildSchema(){
   if (schema) return schema;
-  // Parse the dynamically generated schema JSON
-  schema = JSON.parse(SCHEMA_JSON);
+  
+  // Schema is now directly embedded, no need to fetch
+  schema = SCHEMA;
   // Normalize numbers
   schema.params.forEach(p=>{ 
     p.id = +p.id; 
@@ -250,3 +203,4 @@ init();
 </script>
 </body></html>
 )HTML";
+

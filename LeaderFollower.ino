@@ -341,9 +341,15 @@ struct Node {
     server->begin();
   }
 
-  void serveIndex() {
-  server->send(200, "text/html; charset=utf-8", INDEX_HTML);
-  }
+void serveIndex() {
+  String fullHtml;
+  fullHtml.reserve(4096); // Pre-allocate to avoid reallocs
+  fullHtml += FPSTR(INDEX_HTML_PREFIX);
+  fullHtml += FPSTR(ANIM_SCHEMA_JSON);
+  fullHtml += FPSTR(INDEX_HTML_SUFFIX);
+  server->send(200, "text/html; charset=utf-8", fullHtml);
+}
+
 
   void serveState() {
     String j = "{";
