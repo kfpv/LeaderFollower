@@ -121,18 +121,22 @@ async function buildSchema(){
   schema = SCHEMA;
   // Normalize numbers
   schema.params.forEach(p=>{ 
-    p.id = +p.id; 
-    p.type = +p.type; 
-    p.min = normalizeNumber(p.min); 
-    p.max = normalizeNumber(p.max); 
-    p.def = normalizeNumber(p.def); 
-    p.bits = +p.bits;
+    if (p) {
+      p.id = +p.id; 
+      p.type = +p.type; 
+      p.min = normalizeNumber(p.min); 
+      p.max = normalizeNumber(p.max); 
+      p.def = normalizeNumber(p.def); 
+      p.bits = +p.bits;
+    }
   });
   schema.animations.forEach(a=>{ 
-    a.index = +a.index; 
-    a.params = a.params.map(x=>+x); 
+    if (a) {
+      a.index = +a.index; 
+      a.params = a.params.map(x=>+x); 
+    }
   });
-  schema.params.forEach(p=>paramMap.set(p.id,p));
+  schema.params.forEach(p=>{if (p) paramMap.set(p.id,p);});
   return schema;
 }
 
