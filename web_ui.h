@@ -79,7 +79,7 @@ static const char ANIM_SCHEMA_JSON[] PROGMEM =
   
 static const char INDEX_HTML_SUFFIX[] PROGMEM = R"HTML(';
 const SCHEMA = JSON.parse(SCHEMA_JSON);
-<script>
+
 function $(id){return document.getElementById(id);} // small helper
 
 const tabs=[{btn:'tabLeader',panel:'panelLeader'},{btn:'tabFollower',panel:'panelFollower'},{btn:'tabGlobals',panel:'panelGlobals'}];
