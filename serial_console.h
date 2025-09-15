@@ -16,13 +16,22 @@ struct ConsoleAdapter {
 
 class SerialConsole {
  public:
-  void begin(const ConsoleAdapter& a){ adapter_ = a; state_ = Idle; bufLen_ = 0; promptShown_ = false; }
+  void begin(const ConsoleAdapter& a){ adapter_ = a; state_ = Idle; bufLen_ = 0; promptShown_ = false; 
+    Serial.println("[console] ready. Press Enter"); Serial.print("> ");
+  }
   void loop(){
     if (!adapter_.sendSync) return; // not initialized
     while (Serial.available() > 0) {
       char c = (char)Serial.read();
-      if (c == '\r') continue;
-      if (c == '\n') { handleLine(); bufLen_ = 0; lineBuf_[0] = '\0'; return; }
+      if (debugEcho_) {
+        Serial.print("[rx] '");
+        if (c=='\r') Serial.print("\\r"); else if (c=='\n') Serial.print("\\n");
+        else if (isprint((unsigned char)c)) Serial.print(c); else Serial.print('.');
+        Serial.print("' code="); Serial.print((int)(unsigned char)c);
+        Serial.print(" 0x"); Serial.println((int)(unsigned char)c, HEX);
+      }
+      // Treat CR or LF as end-of-line
+      if (c == '\r' || c == '\n') { handleLine(); bufLen_ = 0; lineBuf_[0] = '\0'; return; }
       if (bufLen_ + 1 < sizeof(lineBuf_)) { lineBuf_[bufLen_++] = c; lineBuf_[bufLen_] = '\0'; }
     }
   }
@@ -32,6 +41,7 @@ class SerialConsole {
   ConsoleAdapter adapter_{};
   char lineBuf_[128]{}; size_t bufLen_{0};
   bool promptShown_{false};
+  bool debugEcho_{true};
 
   // param entry context
   uint8_t curAnim_{0};
@@ -47,6 +57,7 @@ class SerialConsole {
     Serial.println("  sync            - send SYNC now");
     Serial.println("  bright [0..1]  - set brightness");
     Serial.println("  anim            - change follower animation & params");
+  Serial.println("  debug [on|off] - echo received chars & codes");
     Serial.print("> ");
   }
 
@@ -67,6 +78,13 @@ class SerialConsole {
     if (isBlank(lineBuf_)) { printMenu(); return; }
     if (startsWith(lineBuf_, "help")) { printMenu(); return; }
     if (startsWith(lineBuf_, "sync")) { if (adapter_.sendSync) adapter_.sendSync(adapter_.user); Serial.println("Sent SYNC"); Serial.print("> "); return; }
+    if (startsWith(lineBuf_, "debug")) {
+      const char* p = skipWord(lineBuf_); while(*p==' ') ++p;
+      if (*p==0) { Serial.print("debug is "); Serial.println(debugEcho_?"on":"off"); }
+      else if (strncasecmp(p,"on",2)==0) { debugEcho_=true; Serial.println("debug on"); }
+      else if (strncasecmp(p,"off",3)==0) { debugEcho_=false; Serial.println("debug off"); }
+      Serial.print("> "); return;
+    }
     if (startsWith(lineBuf_, "bright")) {
       // parse optional value
       const char* p = skipWord(lineBuf_); while(*p==' ') ++p; if (*p) {
