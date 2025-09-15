@@ -20,7 +20,6 @@ class SerialConsole {
     Serial.println("[console] ready. Press Enter"); Serial.print("> ");
   }
   void loop(){
-    if (!adapter_.sendSync) return; // not initialized
     while (Serial.available() > 0) {
       char c = (char)Serial.read();
       if (debugEcho_) {
