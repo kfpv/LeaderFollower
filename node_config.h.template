@@ -1,0 +1,19 @@
+#pragma once
+#include <stdint.h>
+
+#define IS_LEADER false
+
+#define LED_CHANNEL_COUNT 32
+
+    /*physical channels*/ //software led numbers
+	/*0-15 on top i2c mux, 16-31 is 0-15 on bottom i2c mux*/
+	/* -1 is not mapped*/
+
+static constexpr int16_t LED_CHANNEL_MAP[LED_CHANNEL_COUNT] = {
+	/*  0-4  */  5,  6,  7,  8,  9,
+	/*  5-9  */  0,  1,  2,  3,  4,
+	/* 10-15 */ 10, 11, 12, 13, 14, -1,
+	/* 16-20 */ 20, 21, 22, -1, -1,
+	/* 21-25 */ 15, 16, 17, 18, 19,
+	/* 26-31 */ 23, 24, 25, 26, 27, -1
+};
