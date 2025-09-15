@@ -78,7 +78,32 @@ static const char ANIM_SCHEMA_JSON[] PROGMEM =
     "null]}";
   
 static const char INDEX_HTML_SUFFIX[] PROGMEM = R"HTML(';
-const SCHEMA = JSON.parse(SCHEMA_JSON);
+
+
+function parseSchemaAndFix(jsonText) {
+  const data = JSON.parse(jsonText);
+
+  // helper to strip a trailing f/F and convert to number
+  const toFloat = v =>
+    (typeof v === 'string' && /^-?\d+(?:\.\d+)?f$/i.test(v))
+      ? parseFloat(v)
+      : v;
+
+  // Only touch data.params[*].min/max/def
+  if (Array.isArray(data.params)) {
+    data.params.forEach(p => {
+      if (p) { // skip the final null
+        p.min = toFloat(p.min);
+        p.max = toFloat(p.max);
+        p.def = toFloat(p.def);
+      }
+    });
+  }
+
+  return data;
+}
+
+const SCHEMA = parseSchemaAndFix(SCHEMA_JSON);
 
 function $(id){return document.getElementById(id);} // small helper
 

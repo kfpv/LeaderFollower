@@ -19,7 +19,7 @@ struct AnimDef { uint8_t index; const char *name; const uint8_t *paramIds; uint8
 
 // Define JSON generation macros for web UI
 #define PARAM_JSON_ITEM(NAME, ID, TYPE, UI, CTYPE, FIELD, MIN, MAX, DEF, BITS) \
-  "{\"id\":" #ID ",\"name\":\"" UI "\",\"type\":" #TYPE ",\"min\":" #MIN ",\"max\":" #MAX ",\"def\":" #DEF ",\"bits\":" #BITS "}"
+  "{\"id\":" #ID ",\"name\":\"" UI "\",\"type\":\"" #TYPE "\",\"min\":" #MIN ",\"max\":\"" #MAX "\",\"def\":" #DEF "\",\"bits\":" #BITS "}"
 
 #define ANIM_JSON_ITEM(INDEX, NAME, ...) \
   "{\"index\":" #INDEX ",\"name\":\"" NAME "\",\"params\":[" #__VA_ARGS__ "]}"
