@@ -43,3 +43,9 @@ arduino-cli usage:
 arduino-cli compile --fqbn Heltec-esp32:esp32:heltec_wifi_lora_32_V3 .
 arduino-cli upload -p /dev/ttyUSB0 --fqbn Heltec-esp32:esp32:heltec_wifi_lora_32_V3 .
 ```
+
+## access the web ui
+
+- ssid: LeaderNode-AP
+- password: leds1234
+- ip: 192.168.4.1
