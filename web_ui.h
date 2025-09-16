@@ -53,8 +53,10 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
     .navlink.active{background:var(--accent1);border-color:var(--accent1);color:#fff}
     .navlink.disabled{opacity:.5;pointer-events:none}
     .hamburger{display:none;background:#1b2030;border:1px solid var(--outline);color:var(--text);border-radius:8px;padding:8px 10px;font-size:16px}
+    .toolbar{display:flex;gap:8px;margin-left:8px}
     @media (max-width:700px){
-      .hamburger{display:block; margin-left: auto;}
+      .hamburger{display:block;margin-left:0}
+      .toolbar{margin-left:auto}
       .navlinks{position:absolute;top:54px;right:12px;flex-direction:column;gap:10px;background:var(--panel);border:1px solid var(--outline);border-radius:12px;padding:10px;display:none;z-index:9999}
       .navlinks.open{display:flex}
     }
@@ -94,6 +96,14 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
         <a href="#" data-mode="sequential" class="navlink">Sequential</a>
         <a href="#" data-mode="mapping" class="navlink disabled" title="Not implemented">Mapping</a>
       </nav>
+  <div class="toolbar">
+        <button id="btnImport" title="Import config" class="navlink" aria-label="Import">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-import-icon lucide-import"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4"/></svg>
+        </button>
+        <button id="btnExport" title="Export config" class="navlink" aria-label="Export">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-copy-icon lucide-clipboard-copy"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg>
+        </button>
+      </div>
       <button class="hamburger" aria-label="menu" aria-expanded="false">☰</button>
     </div>
   </header>
@@ -169,16 +179,16 @@ function parseSchemaAndFix(jsonText) {
 const SCHEMA = parseSchemaAndFix(SCHEMA_JSON);
 const $ = (id)=>document.getElementById(id);
 
-// Navbar mode switching
-const navlinks=[...document.querySelectorAll('.navlink')];
+// Navbar mode switching (only links with data-mode act as tabs)
+const modeLinks=[...document.querySelectorAll('.navlink[data-mode]')];
 const hamburger=document.querySelector('.hamburger');
 function setMode(mode){
-  navlinks.forEach(a=>a.classList.toggle('active',a.dataset.mode===mode));
+  modeLinks.forEach(a=>a.classList.toggle('active',a.dataset.mode===mode));
   document.querySelectorAll('.mode-normal').forEach(el=>el.hidden=(mode!=='normal'));
   document.querySelectorAll('.mode-seq').forEach(el=>el.hidden=(mode!=='sequential'));
   const nl=document.querySelector('.navlinks'); nl.classList.remove('open'); hamburger.setAttribute('aria-expanded','false');
 }
-navlinks.forEach(a=>!a.classList.contains('disabled')&&a.addEventListener('click',e=>{e.preventDefault();setMode(a.dataset.mode);}));
+modeLinks.forEach(a=>!a.classList.contains('disabled')&&a.addEventListener('click',e=>{e.preventDefault();setMode(a.dataset.mode);}));
 hamburger.addEventListener('click',()=>{const nl=document.querySelector('.navlinks');const isOpen=nl.classList.toggle('open');hamburger.setAttribute('aria-expanded',String(isOpen));});
 
 // Tabs for narrow screens
@@ -261,11 +271,11 @@ function buildControlsFor(prefix){
 
 function buildGlobals(){
   const gc=$('G_paramContainer'); if(!gc) return; gc.innerHTML=''; if(!schema) return;
-  // Dynamic globals (optional) appended after static three.
-  const used=new Set(); (schema.animations||[]).forEach(a=>{ if(!a) return; (a.params||[]).forEach(pid=>used.add(pid)); });
-  const globals=(schema.params||[]).filter(p=>p&&!used.has(p.id) && !/global speed|min brightness|max brightness/i.test(p.name));
-  globals.sort((a,b)=>String(a.name).localeCompare(String(b.name)));
-  globals.forEach(pd=>gc.appendChild(createParamControl(pd,'G_')));
+  // Only these three are globals, in this order
+  const order=["globalspeed","globalmin","globalmax"];
+  const byName=new Map();
+  (schema.params||[]).forEach(p=>{ if(!p) return; byName.set(String(p.name).toLowerCase(), p); });
+  order.forEach(key=>{ const pd=byName.get(key); if(pd) gc.appendChild(createParamControl(pd,'G_')); });
 }
 
 function gather(prefix){
@@ -289,6 +299,71 @@ async function send(role, animIndex, params, globals){
     const body=JSON.stringify({role,animIndex,params,globals});
     await fetch('/api/cfg2',{method:'POST',headers:{'Content-Type':'application/json'},body});
   }catch(e){console.error('send failed',e);} }
+
+// ----- Import / Export -----
+function buildExportConfig(){
+  const L=gather('L'); const F=gather('F');
+  // Only include globalSpeed from globals
+  let globalSpeedVal=null;
+  // Find element in globals with name globalSpeed
+  const gsRow=[...document.querySelectorAll('#G_paramContainer .param-row')].find(r=>{
+    const pid=parseInt(r.dataset.pid||'-1',10); const pd=paramMap.get(pid); return pd && String(pd.name).toLowerCase()==='globalspeed';
+  });
+  if (gsRow){
+    const input=gsRow.querySelector('[data-role="value-input"]');
+    if (input) globalSpeedVal = input.type==='checkbox'? (input.checked?1:0) : parseFloat(input.value);
+  }
+  const cfg={ v:1, globals:{ globalSpeed: (globalSpeedVal??1.0) }, leader:{ animIndex:L.animIndex, params:L.params }, follower:{ animIndex:F.animIndex, params:F.params } };
+  return cfg;
+}
+
+function validateConfig(cfg){
+  if(!cfg || typeof cfg!=='object') return 'not an object';
+  if(!cfg.leader || !cfg.follower) return 'missing leader/follower';
+  const checkSide=(s)=> typeof s.animIndex==='number' && Array.isArray(s.params) && s.params.every(p=>p&&typeof p.id==='number'&&typeof p.value==='number');
+  if(!checkSide(cfg.leader) || !checkSide(cfg.follower)) return 'bad side payload';
+  if(cfg.globals && typeof cfg.globals.globalSpeed!=='number') return 'bad globals';
+  return null;
+}
+
+async function copyToClipboard(text){
+  try{ await navigator.clipboard.writeText(text); return true; }catch{ return false; }
+}
+async function readFromClipboard(){
+  try{ const t=await navigator.clipboard.readText(); return t; }catch{ return null; }
+}
+
+function applyImportedConfig(cfg){
+  // Set globals (only globalSpeed)
+  if (cfg.globals && typeof cfg.globals.globalSpeed==='number'){
+    const gsRow=[...document.querySelectorAll('#G_paramContainer .param-row')].find(r=>{ const pid=parseInt(r.dataset.pid||'-1',10); const pd=paramMap.get(pid); return pd && String(pd.name).toLowerCase()==='globalspeed'; });
+    if (gsRow){ const inp=gsRow.querySelector('[data-role="value-input"]'); if(inp){ inp.value=String(cfg.globals.globalSpeed); const range=gsRow.querySelector('input[type=range]'); if(range) range.value=inp.value; } }
+  }
+  // Leader/follower
+  const sides=[['L', cfg.leader], ['F', cfg.follower]];
+  sides.forEach(([prefix, side])=>{
+    const sel=$(prefix+'_anim'); if(!sel) return; sel.value=String(side.animIndex); buildControlsFor(prefix);
+    const cont=$(prefix+'_paramContainer');
+    side.params.forEach(p=>{ const row=[...cont.querySelectorAll('.param-row')].find(r=>parseInt(r.dataset.pid,10)===p.id); if(row){ const inp=row.querySelector('[data-role="value-input"]'); if(inp){ if(inp.type==='checkbox') inp.checked = !!p.value; else inp.value=String(p.value); const range=row.querySelector('input[type=range]'); if(range && inp.type==='number') range.value=inp.value; } } });
+  });
+}
+
+async function doExport(){
+  const cfg=buildExportConfig(); const text=JSON.stringify(cfg);
+  const ok=await copyToClipboard(text);
+  if(!ok){ window.prompt('Copy config JSON:', text); }
+  const st=$('status'); if(st){ st.textContent='exported'; setTimeout(()=>st.textContent='\u00a0',1200); }
+}
+
+async function doImport(){
+  let text=await readFromClipboard();
+  if(!text){ text = window.prompt('Paste config JSON:') || ''; }
+  if(!text) return;
+  let cfg=null; try{ cfg=JSON.parse(text); }catch{ alert('Invalid JSON'); return; }
+  const err=validateConfig(cfg); if(err){ alert('Invalid config: '+err); return; }
+  applyImportedConfig(cfg);
+  const st=$('status'); if(st){ st.textContent='imported'; setTimeout(()=>st.textContent='\u00a0',1200); }
+}
 
 function findSingleAnimIndex(){
   const byName=(schema.animations||[]).find(a=>a&&String(a.name).toLowerCase().includes('single'));
@@ -368,6 +443,9 @@ async function init(){
   buildAnimSelect($('L_anim')); buildAnimSelect($('F_anim'));
   buildControlsFor('L'); buildControlsFor('F'); buildGlobals();
   initTabs(); buildGrids(); setMode('normal');
+  // Wire Import / Export action buttons
+  const btnImport=$('btnImport'); if(btnImport){ btnImport.addEventListener('click', (e)=>{ e.preventDefault(); doImport(); }); }
+  const btnExport=$('btnExport'); if(btnExport){ btnExport.addEventListener('click', (e)=>{ e.preventDefault(); doExport(); }); }
   $('apply').addEventListener('click', async ()=>{
     try {
       const g=gatherGlobals(); const L=gather('L'); const F=gather('F');

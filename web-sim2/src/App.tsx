@@ -84,6 +84,86 @@ const App = () => {
   const animationRef = useRef<number | null>(null)
   const startTimeRef = useRef<number>(Date.now())
 
+  // ----- Import/Export helpers -----
+  type SideConfig = { animIndex: number, params: Array<{id:number,value:number}> }
+  type ExportConfig = { v:1, globals:{ globalSpeed:number }, leader: SideConfig, follower: SideConfig }
+
+  const currentAnimParamIds = (animIndex: number): number[] => {
+    const anim = animations.find(a => a.index === animIndex)
+    return anim ? anim.parameters.map(p => p.id) : []
+  }
+
+  const buildSideConfig = (animIndex: number, side: 'left'|'right'): SideConfig => {
+    const ids = currentAnimParamIds(animIndex)
+    const params = ids.map(id => ({ id, value: getParameterValue(id, side) }))
+    return { animIndex, params }
+  }
+
+  const buildExportConfig = (): ExportConfig => {
+    return {
+      v: 1,
+      globals: { globalSpeed: globalControls.globalSpeed ?? 1.0 },
+      leader: buildSideConfig(leftAnimation, 'left'),
+      follower: buildSideConfig(rightAnimation, 'right')
+    }
+  }
+
+  const validateConfig = (cfg: any): string|null => {
+    if (!cfg || typeof cfg !== 'object') return 'not an object'
+    if (cfg.v !== 1) return 'unsupported version'
+    if (!cfg.leader || !cfg.follower) return 'missing leader/follower'
+    const checkSide = (s:any) => typeof s.animIndex==='number' && Array.isArray(s.params) && s.params.every((p:any)=>p && typeof p.id==='number' && typeof p.value==='number')
+    if (!checkSide(cfg.leader) || !checkSide(cfg.follower)) return 'bad side payload'
+    if (cfg.globals && typeof cfg.globals.globalSpeed !== 'number') return 'bad globals'
+    return null
+  }
+
+  const copyToClipboard = async (text:string): Promise<boolean> => {
+    try { await navigator.clipboard.writeText(text); return true } catch { return false }
+  }
+  const readFromClipboard = async (): Promise<string|null> => {
+    try { return await navigator.clipboard.readText() } catch { return null }
+  }
+
+  const applyImportedConfig = (cfg: ExportConfig) => {
+    // globals
+    if (cfg.globals && typeof cfg.globals.globalSpeed === 'number') {
+      setGlobalControls(prev => ({ ...prev, globalSpeed: cfg.globals.globalSpeed }))
+      if (module) module._param_set(20, cfg.globals.globalSpeed)
+    }
+    // leader/follower selections
+    setLeftAnimation(cfg.leader.animIndex)
+    setRightAnimation(cfg.follower.animIndex)
+    // update parameter maps for ids provided
+    const toMap = (base: {[k:number]:number}, side: SideConfig) => {
+      const next = { ...base }
+      side.params.forEach(p => { next[p.id] = p.value })
+      return next
+    }
+    setLeftParams(prev => toMap(prev, cfg.leader))
+    setRightParams(prev => toMap(prev, cfg.follower))
+  }
+
+  const doExport = async () => {
+    const cfg = buildExportConfig()
+    const text = JSON.stringify(cfg)
+    const ok = await copyToClipboard(text)
+    if (!ok) {
+      window.prompt('Copy config JSON:', text)
+    }
+  }
+
+  const doImport = async () => {
+    let text = await readFromClipboard()
+    if (!text) text = window.prompt('Paste config JSON:') || ''
+    if (!text) return
+    let cfg: any
+    try { cfg = JSON.parse(text) } catch { alert('Invalid JSON'); return }
+    const err = validateConfig(cfg)
+    if (err) { alert('Invalid config: ' + err); return }
+    applyImportedConfig(cfg)
+  }
+
   
 
   // Helper function to read string from memory using helper functions
@@ -366,6 +446,16 @@ const App = () => {
         isPaused={isPaused}
         onPauseToggle={togglePause}
       />
+
+      {/* Bottom-right import/export */}
+      <div style={{position:'fixed', right:'16px', bottom:'16px', display:'flex', gap:'8px', zIndex:20}}>
+        <button title="Import" aria-label="Import" onClick={doImport} style={{padding:'8px', borderRadius:'8px', background:'#1f2937', color:'#e5e7eb', border:'1px solid #374151'}}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-import-icon lucide-import"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4"/></svg>
+        </button>
+        <button title="Export" aria-label="Export" onClick={doExport} style={{padding:'8px', borderRadius:'8px', background:'#1f2937', color:'#e5e7eb', border:'1px solid #374151'}}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-clipboard-copy-icon lucide-clipboard-copy"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg>
+        </button>
+      </div>
     </div>
   )
 }
