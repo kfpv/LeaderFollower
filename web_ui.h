@@ -386,6 +386,10 @@ function setParamValueInContainer(containerId, predicate, value){
   }
 }
 
+function setParamValueByPid(containerId, pid, value){
+  setParamValueInContainer(containerId, pd=>pd.id===pid, value);
+}
+
 function applySequentialSelection(prefix, selectedIndex){
   const sel=$(prefix+'_anim'); const singleIdx=findSingleAnimIndex(); sel.value=String(singleIdx);
   // rebuild params for single anim and set the likely index param
@@ -426,27 +430,25 @@ function buildGrids(){
 async function loadState(){
   try{
     const r=await fetch('/api/state'); if(!r.ok) return; const s=await r.json();
-    // Globals by name if possible
-    const setGlobalByName=(name, val)=>{
-      setParamValueInContainer('G_paramContainer', pd=>String(pd.name).toLowerCase().includes(name), val);
-    };
-    setGlobalByName('global speed', s.globalSpeed);
-    setGlobalByName('global min', s.globalMin);
-    setGlobalByName('global max', s.globalMax);
     // Leader
-    $('L_anim').value=String(s.leader.animIndex); buildControlsFor('L');
-    setParamValueInContainer('L_paramContainer', pd=>/speed/i.test(pd.name), s.leader.speed);
-    setParamValueInContainer('L_paramContainer', pd=>/phase/i.test(pd.name), s.leader.phase);
-    setParamValueInContainer('L_paramContainer', pd=>/width|single/i.test(pd.name), s.leader.width);
-    setParamValueInContainer('L_paramContainer', pd=>/branch/i.test(pd.name), s.leader.branchMode?1:0);
-    setParamValueInContainer('L_paramContainer', pd=>/invert/i.test(pd.name), s.leader.invert?1:0);
+    if (s.leader){
+      $('L_anim').value=String(s.leader.animIndex); buildControlsFor('L');
+      const lp = Array.isArray(s.leader.params) ? s.leader.params : [];
+      lp.forEach(p=>{ if (p && typeof p.id==='number' && typeof p.value==='number') setParamValueByPid('L_paramContainer', p.id, p.value); });
+    }
     // Follower
-    $('F_anim').value=String(s.follower.animIndex); buildControlsFor('F');
-    setParamValueInContainer('F_paramContainer', pd=>/speed/i.test(pd.name), s.follower.speed);
-    setParamValueInContainer('F_paramContainer', pd=>/phase/i.test(pd.name), s.follower.phase);
-    setParamValueInContainer('F_paramContainer', pd=>/width|single/i.test(pd.name), s.follower.width);
-    setParamValueInContainer('F_paramContainer', pd=>/branch/i.test(pd.name), s.follower.branchMode?1:0);
-    setParamValueInContainer('F_paramContainer', pd=>/invert/i.test(pd.name), s.follower.invert?1:0);
+    if (s.follower){
+      $('F_anim').value=String(s.follower.animIndex); buildControlsFor('F');
+      const fp = Array.isArray(s.follower.params) ? s.follower.params : [];
+      fp.forEach(p=>{ if (p && typeof p.id==='number' && typeof p.value==='number') setParamValueByPid('F_paramContainer', p.id, p.value); });
+    }
+    // Globals from leader params by PIDs
+    const pids = { speed: 20, min: 21, max: 22 };
+    const lp = (s.leader && Array.isArray(s.leader.params)) ? s.leader.params : [];
+    const findVal=(pid)=>{ const it=lp.find(x=>x&&x.id===pid); return it? it.value : null; };
+    const gs=findVal(pids.speed); if (typeof gs==='number') setParamValueByPid('G_paramContainer', pids.speed, gs);
+    const gmin=findVal(pids.min); if (typeof gmin==='number') setParamValueByPid('G_paramContainer', pids.min, gmin);
+    const gmax=findVal(pids.max); if (typeof gmax==='number') setParamValueByPid('G_paramContainer', pids.max, gmax);
   }catch(e){console.warn('state load failed',e);}
 }
 

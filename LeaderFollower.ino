@@ -1,4 +1,5 @@
 #include <Arduino.h>
+
 #include "interfaces.h"
 #include "animations.h"
 #include "protocol.h"
@@ -9,7 +10,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include "web_ui.h"
-#include <Preferences.h>
 #endif
 #include "serial_console.h"
 
@@ -23,7 +23,7 @@ struct Node {
   LEDInterface *leds;
   TimeInterface *timeif;
   float brightness{1.0f};
-  uint8_t animIndex{1}; // legacy field retained but SYNC no longer carries anim
+  uint8_t animIndex{1}; // kept for SYNC compatibility (leader uses leaderCfg.animIndex)
   uint32_t lastSyncSent{0};
   uint32_t lastPrintMs{0};
   uint32_t framesSincePrint{0};
@@ -372,25 +372,32 @@ void serveIndex() {
 }
 
 
-  void serveState() {
+  void serveState() {  
     String j = "{";
-  j += "\"globalSpeed\":" + String(globalSpeed, 3) + ",";
-  j += "\"globalMin\":" + String(globalMin, 3) + ",";
-  j += "\"globalMax\":" + String(globalMax, 3) + ",";
+    // Leader: dynamic only
     j += "\"leader\":{";
     j += "\"animIndex\":" + String(leaderCfg.animIndex) + ",";
-    j += "\"speed\":" + String(leaderCfg.speed,3) + ",";
-    j += "\"phase\":" + String(leaderCfg.phase,3) + ",";
-    j += "\"width\":" + String(leaderCfg.width) + ",";
-    j += "\"branchMode\":" + String(leaderCfg.branchMode?"true":"false") + ",";
-    j += "\"invert\":" + String(leaderCfg.invert?"true":"false") + "},";
+    j += "\"params\":[";
+    for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
+      AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
+      if (i) j += ',';
+      j += '{';
+      j += "\"id\":" + String(pd.id) + ",\"value\":" + String(Anim::getParamField(leaderParams, pd.id), 5);
+      j += '}';
+    }
+    j += "]},";
+    // Follower: dynamic only
     j += "\"follower\":{";
     j += "\"animIndex\":" + String(followerCfg.animIndex) + ",";
-    j += "\"speed\":" + String(followerCfg.speed,3) + ",";
-    j += "\"phase\":" + String(followerCfg.phase,3) + ",";
-    j += "\"width\":" + String(followerCfg.width) + ",";
-    j += "\"branchMode\":" + String(followerCfg.branchMode?"true":"false") + ",";
-    j += "\"invert\":" + String(followerCfg.invert?"true":"false") + "}";
+    j += "\"params\":[";
+    for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
+      AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
+      if (i) j += ',';
+      j += '{';
+      j += "\"id\":" + String(pd.id) + ",\"value\":" + String(Anim::getParamField(followerParams, pd.id), 5);
+      j += '}';
+    }
+    j += "]}";
     j += "}";
     server->send(200, "application/json", j);
   }
@@ -547,15 +554,58 @@ void serveIndex() {
 } node;
 
 void setup(){
-  node.isLeader = IS_LEADER; // defined in node_config.h
-  node.comm = createCommunication();
-  node.leds = createLEDs();
-  node.timeif = createTimeIf();
-  node.begin();
-}
-
-void loop(){ node.tick(); 
-  #ifdef ARDUINO
-  delay(10);
-  #endif
-}
+    String j = "{";
+    // Legacy globals for compatibility
+    j += "\"globalSpeed\":" + String(globalSpeed, 3) + ",";
+    j += "\"globalMin\":" + String(globalMin, 3) + ",";
+    j += "\"globalMax\":" + String(globalMax, 3) + ",";
+    // Leader block
+    j += "\"leader\":";
+    j += "{";
+    j += "\"animIndex\":" + String(leaderCfg.animIndex) + ",";
+    j += "\"speed\":" + String(leaderCfg.speed,3) + ",";
+    j += "\"phase\":" + String(leaderCfg.phase,3) + ",";
+    j += "\"width\":" + String(leaderCfg.width) + ",";
+    j += "\"branchMode\":" + String(leaderCfg.branchMode?"true":"false") + ",";
+    j += "\"invert\":" + String(leaderCfg.invert?"true":"false") + ",";
+    // Dynamic params snapshot
+    j += "\"params\":[";
+    for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
+      AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
+      if (i) j += ',';
+      j += '{';
+      j += "\"id\":" + String(pd.id) + ",\"value\":" + String(Anim::getParamField(leaderParams, pd.id), 5);
+      j += '}';
+    }
+    j += "]},";
+    // Follower block
+    j += "\"follower\":";
+    j += "{";
+    j += "\"animIndex\":" + String(followerCfg.animIndex) + ",";
+    j += "\"speed\":" + String(followerCfg.speed,3) + ",";
+    j += "\"phase\":" + String(followerCfg.phase,3) + ",";
+    j += "\"width\":" + String(followerCfg.width) + ",";
+    j += "\"branchMode\":" + String(followerCfg.branchMode?"true":"false") + ",";
+    j += "\"invert\":" + String(followerCfg.invert?"true":"false") + ",";
+    j += "\"params\":[";
+    for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
+      AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
+      if (i) j += ',';
+      j += '{';
+      j += "\"id\":" + String(pd.id) + ",\"value\":" + String(Anim::getParamField(followerParams, pd.id), 5);
+      j += '}';
+    }
+    j += "]},";
+    // Globals array as dynamic snapshot (redundant with legacy fields)
+    j += "\"globals\":[";
+    const uint8_t gIds[3] = { AnimSchema::PID_GLOBAL_SPEED, AnimSchema::PID_GLOBAL_MIN, AnimSchema::PID_GLOBAL_MAX };
+    for (int i=0;i<3;i++){
+      if (i) j += ',';
+      uint8_t gid = gIds[i];
+      j += '{';
+      j += "\"id\":" + String(gid) + ",\"value\":" + String(Anim::getParamField(leaderParams, gid), 5);
+      j += '}';
+    }
+    j += "]";
+    j += "}";
+    server->send(200, "application/json", j);
