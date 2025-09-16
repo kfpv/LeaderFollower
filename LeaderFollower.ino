@@ -266,31 +266,21 @@ struct Node {
 #endif
   }
 
+  // Dynamic renderer wrapper: selects correct ParamSet and calls Anim::applyAnim
   void renderAnim(const AnimCfg &cfg, float t, float *out) {
-    switch (cfg.animIndex) {
-      case 0: // static
-        Anim::staticOn(t, Anim::TOTAL_LEDS, constrain(cfg.speed, 0.0f, 1.0f), out);
-        break;
-      case 1: // wave
-        Anim::wave(t, Anim::TOTAL_LEDS, cfg.speed, cfg.phase, cfg.branchMode, cfg.invert, out);
-        break;
-      case 2: // pulse
-        Anim::pulse(t, Anim::TOTAL_LEDS, cfg.speed, cfg.phase, cfg.branchMode, out);
-        break;
-      case 3: // chase
-        Anim::chase(t, Anim::TOTAL_LEDS, cfg.speed, cfg.width, cfg.branchMode, out);
-        break;
-      case 4: // single LED (index in width)
-        Anim::single(t, Anim::TOTAL_LEDS, cfg.width, out);
-        break;
-      default:
-        Anim::wave(t, Anim::TOTAL_LEDS, cfg.speed, cfg.phase, cfg.branchMode, cfg.invert, out);
-        break;
-    }
+    // Pick ParamSet based on which cfg is referenced (leader vs follower)
+    const Anim::ParamSet &ps = (&cfg == &leaderCfg) ? leaderParams : followerParams;
+    Anim::applyAnim(cfg.animIndex, t, Anim::TOTAL_LEDS, ps, out);
   }
 
   // --- Serial console ---
-  static void cbSendSync(void* u){ Node* self = reinterpret_cast<Node*>(u); uint32_t now = millis(); uint32_t frame = now/33; self->comm->sendSync(now, frame); }
+  static void cbSendSync(void* u){ Node* self = reinterpret_cast<Node*>(u); 
+    #ifdef ARDUINO
+    uint32_t now = millis();
+    #else
+    uint32_t now = 0;
+    #endif
+    uint32_t frame = now/33; self->comm->sendSync(now, frame); }
   
   static void cbSetBrightness(void* u, float b){ Node* self = reinterpret_cast<Node*>(u); self->brightness = constrain(b,0.0f,1.0f); self->leds->setBrightness(self->brightness); }
   static void cbApplyFollowerCfg2(void* u, uint8_t animIndex, const uint8_t* ids, const float* vals, uint8_t count){
@@ -300,8 +290,10 @@ struct Node {
     // derive legacy subset
     self->followerCfg.speed = self->followerParams.speed; self->followerCfg.phase = self->followerParams.phase; self->followerCfg.width = (animIndex==4)? self->followerParams.singleIndex : self->followerParams.width; self->followerCfg.branchMode = self->followerParams.branch; self->followerCfg.invert = self->followerParams.invert;
     self->globalSpeed = self->followerParams.globalSpeed; self->globalMin = self->followerParams.globalMin; self->globalMax = self->followerParams.globalMax;
-    // Send all parameters via CFG2
-    self->sendAllParams(1, animIndex, self->followerParams);
+  // Send all parameters via CFG2
+  #if defined(ARDUINO_ARCH_ESP32)
+  self->sendAllParams(1, animIndex, self->followerParams);
+  #endif
   }
   void initConsole(){
     ConsoleAdapter a; a.user=this; a.sendSync=&cbSendSync; a.setBrightness=&cbSetBrightness; a.applyFollowerCfg2=&cbApplyFollowerCfg2; console.begin(a);
@@ -504,4 +496,8 @@ void setup(){
   node.begin();
 }
 
-void loop(){ node.tick(); delay(10); }
+void loop(){ node.tick(); 
+  #ifdef ARDUINO
+  delay(10);
+  #endif
+}
