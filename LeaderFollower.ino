@@ -9,6 +9,7 @@
 #if defined(ARDUINO_ARCH_ESP32)
 #include <WiFi.h>
 #include <WebServer.h>
+#include <Preferences.h>
 #include "web_ui.h"
 #endif
 #include "serial_console.h"
@@ -23,7 +24,7 @@ struct Node {
   LEDInterface *leds;
   TimeInterface *timeif;
   float brightness{1.0f};
-  uint8_t animIndex{1}; // kept for SYNC compatibility (leader uses leaderCfg.animIndex)
+  uint8_t animIndex{1}; // kept for SYNC compatibility (leader uses leaderAnimIndex)
   uint32_t lastSyncSent{0};
   uint32_t lastPrintMs{0};
   uint32_t framesSincePrint{0};
@@ -40,15 +41,9 @@ struct Node {
   uint32_t ackTimeout{2000}; // 2 seconds like Python
   uint32_t syncInterval{60000}; // 1 minute between regular syncs
 
-  // Animation configuration
-  struct AnimCfg {
-    uint8_t animIndex{1};
-    float speed{3.0f};
-    float phase{0.0f};
-    uint8_t width{2};
-    bool branchMode{true};
-    bool invert{false};
-  } leaderCfg, followerCfg;
+  // Animation indices per role (CFG2-based)
+  uint8_t leaderAnimIndex{1};
+  uint8_t followerAnimIndex{1};
   float globalSpeed{1.0f};
   float globalMin{0.0f}; // 0..1
   float globalMax{0.1f}; // 0..1
@@ -65,7 +60,9 @@ struct Node {
   float lastSavedGMin{-9999.0f};
   float lastSavedGMax{9999.0f};
 #endif
+#ifdef ARDUINO
   SerialConsole console;
+#endif
 
   void begin() {
   #ifdef ARDUINO
@@ -75,9 +72,9 @@ struct Node {
     leds->begin();
     leds->setBrightness(brightness);
 
-  // Initialize default cfgs
-  leaderCfg.animIndex = animIndex;
-  followerCfg.animIndex = animIndex;
+  // Initialize per-role animation indices
+  leaderAnimIndex = animIndex;
+  followerAnimIndex = animIndex;
 
 #if defined(ARDUINO_ARCH_ESP32)
   // Init NVS and load persisted global min/max if present; apply to both ParamSets
@@ -105,7 +102,9 @@ struct Node {
 
   void tick() {
     comm->loop();
+#ifdef ARDUINO
   if (isLeader) console.loop();
+#endif
     Message msg;
   while (comm->poll(msg)) {
   if (!isLeader && msg.type == Message::SYNC) {
@@ -148,8 +147,8 @@ struct Node {
           #endif
         }
       } else if (!isLeader && msg.type == Message::CFG2) {
-        // Followers apply received dynamic follower config
-        followerCfg.animIndex = msg.cfg2_animIndex;
+  // Followers apply received dynamic follower config
+  followerAnimIndex = msg.cfg2_animIndex;
         // Update followerParams with received pairs
         for (uint8_t i=0;i<msg.cfg2_paramCount;i++) {
           Anim::setParamField(followerParams, msg.cfg2_paramIds[i], msg.cfg2_paramValues[i]);
@@ -157,12 +156,7 @@ struct Node {
         for (uint8_t i=0;i<msg.cfg2_globalCount;i++) {
           Anim::setParamField(followerParams, msg.cfg2_globalIds[i], msg.cfg2_globalValues[i]);
         }
-        // Update legacy snapshot for serveState/UI; renderer now uses ParamSet directly
-        followerCfg.speed = followerParams.speed;
-        followerCfg.phase = followerParams.phase;
-        followerCfg.width = (followerCfg.animIndex==4) ? followerParams.singleIndex : followerParams.width;
-        followerCfg.branchMode = followerParams.branch;
-        followerCfg.invert = followerParams.invert;
+  // Update globals mirror
         globalSpeed = followerParams.globalSpeed;
         globalMin = followerParams.globalMin;
         globalMax = followerParams.globalMax;
@@ -251,7 +245,7 @@ struct Node {
   float t = (baseNow / 1000.0f);
   // Render using new schema ParamSet directly
   const Anim::ParamSet &ps = isLeader ? leaderParams : followerParams;
-  uint8_t aidx = isLeader ? leaderCfg.animIndex : followerCfg.animIndex;
+  uint8_t aidx = isLeader ? leaderAnimIndex : followerAnimIndex;
   Anim::applyAnim(aidx, t, Anim::TOTAL_LEDS, ps, buf);
 
     // FPS and LED values printing every 500 ms
@@ -296,12 +290,7 @@ struct Node {
 #endif
   }
 
-  // Dynamic renderer wrapper: selects correct ParamSet and calls Anim::applyAnim
-  void renderAnim(const AnimCfg &cfg, float t, float *out) {
-    // Pick ParamSet based on which cfg is referenced (leader vs follower)
-    const Anim::ParamSet &ps = (&cfg == &leaderCfg) ? leaderParams : followerParams;
-    Anim::applyAnim(cfg.animIndex, t, Anim::TOTAL_LEDS, ps, out);
-  }
+  // (legacy render wrapper removed; rendering uses ParamSet directly)
 
   // --- Serial console ---
   static void cbSendSync(void* u){ Node* self = reinterpret_cast<Node*>(u); 
@@ -316,18 +305,20 @@ struct Node {
   static void cbApplyFollowerCfg2(void* u, uint8_t animIndex, const uint8_t* ids, const float* vals, uint8_t count){
     Node* self = reinterpret_cast<Node*>(u);
     // Update followerParams
-    self->followerCfg.animIndex = animIndex; for(uint8_t i=0;i<count;i++){ Anim::setParamField(self->followerParams, ids[i], vals[i]); }
-    // derive legacy subset
-    self->followerCfg.speed = self->followerParams.speed; self->followerCfg.phase = self->followerParams.phase; self->followerCfg.width = (animIndex==4)? self->followerParams.singleIndex : self->followerParams.width; self->followerCfg.branchMode = self->followerParams.branch; self->followerCfg.invert = self->followerParams.invert;
+    self->followerAnimIndex = animIndex;
+    for(uint8_t i=0;i<count;i++){ Anim::setParamField(self->followerParams, ids[i], vals[i]); }
+    // update globals mirror
     self->globalSpeed = self->followerParams.globalSpeed; self->globalMin = self->followerParams.globalMin; self->globalMax = self->followerParams.globalMax;
   // Send all parameters via CFG2
   #if defined(ARDUINO_ARCH_ESP32)
   self->sendAllParams(1, animIndex, self->followerParams);
   #endif
   }
+  #ifdef ARDUINO
   void initConsole(){
     ConsoleAdapter a; a.user=this; a.sendSync=&cbSendSync; a.setBrightness=&cbSetBrightness; a.applyFollowerCfg2=&cbApplyFollowerCfg2; console.begin(a);
   }
+  #endif
 
 #if defined(ARDUINO_ARCH_ESP32)
   // --- Web UI ---
@@ -357,7 +348,6 @@ struct Node {
   server->on("/", HTTP_GET, [this]() { serveIndex(); });
   server->on("/api/state", HTTP_GET, [this]() { serveState(); });
   server->on("/api/apply", HTTP_POST, [this]() { handleApply(); }); // legacy form
-  server->on("/api/schema", HTTP_GET, [this]() { serveSchema(); });
   server->on("/api/cfg2", HTTP_POST, [this]() { handleCfg2(); });
     server->begin();
   }
@@ -376,7 +366,7 @@ void serveIndex() {
     String j = "{";
     // Leader: dynamic only
     j += "\"leader\":{";
-    j += "\"animIndex\":" + String(leaderCfg.animIndex) + ",";
+  j += "\"animIndex\":" + String(leaderAnimIndex) + ",";
     j += "\"params\":[";
     for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
       AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
@@ -388,7 +378,7 @@ void serveIndex() {
     j += "]},";
     // Follower: dynamic only
     j += "\"follower\":{";
-    j += "\"animIndex\":" + String(followerCfg.animIndex) + ",";
+  j += "\"animIndex\":" + String(followerAnimIndex) + ",";
     j += "\"params\":[";
     for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
       AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
@@ -402,39 +392,6 @@ void serveIndex() {
     server->send(200, "application/json", j);
   }
 
-  void serveSchema() {
-    using namespace AnimSchema;
-    String j = "{";
-    j += "\"params\":[";
-    for (size_t i=0;i<sizeof(PARAMS)/sizeof(PARAMS[0]); ++i){
-      ParamDef pd; memcpy_P(&pd, &PARAMS[i], sizeof(pd));
-      if (i) j += ',';
-      j += '{';
-      j += "\"id\":" + String(pd.id);
-      j += ",\"name\":\"" + String(pd.name) + "\"";
-      j += ",\"type\":" + String((uint8_t)pd.type);
-      j += ",\"min\":" + String(pd.minVal,3);
-      j += ",\"max\":" + String(pd.maxVal,3);
-      j += ",\"def\":" + String(pd.defVal,3);
-      j += ",\"bits\":" + String(pd.bits);
-      j += '}';
-    }
-    j += "],\"animations\":[";
-    for (size_t i=0;i<sizeof(AnimSchema::ANIM_ITEMS)/sizeof(AnimSchema::ANIM_ITEMS[0]); ++i){
-      AnimDef ad; memcpy_P(&ad, &AnimSchema::ANIM_ITEMS[i], sizeof(ad));
-      if (i) j += ','; j += '{';
-      j += "\"index\":" + String(ad.index);
-      j += ",\"name\":\"" + String(ad.name) + "\"";
-      j += ",\"params\":[";
-      for (uint8_t k=0;k<ad.paramCount; ++k){
-        uint8_t pid = pgm_read_byte(ad.paramIds + k);
-        if (k) j += ','; j += String(pid);
-      }
-      j += "]}";
-    }
-    j += "]}";
-    server->send(200, "application/json", j);
-  }
 
   // Very light JSON parser for cfg2 {role,animIndex,params:[{id,value}],globals:[{id,value}]}
   void handleCfg2() {
@@ -446,8 +403,8 @@ void serveIndex() {
       int end=idx; while (end<(int)body.length() && ( (body[end]>='0'&&body[end]<='9') || body[end]=='-' || body[end]=='+' || body[end]=='.' || body[end]=='e' || body[end]=='E')) end++;
       return body.substring(idx,end).toFloat();
     };
-    uint8_t role = (uint8_t)extractNum("\"role\"", 1);
-    uint8_t animIndex = (uint8_t)extractNum("\"animIndex\"", followerCfg.animIndex);
+  uint8_t role = (uint8_t)extractNum("\"role\"", 1);
+  uint8_t animIndex = (uint8_t)extractNum("\"animIndex\"", followerAnimIndex);
     // Update target param set
     Anim::ParamSet &ps = (role==0)? leaderParams : followerParams;
     // Parse all occurrences of "id":X and following "value":Y (simple approximation)
@@ -467,9 +424,8 @@ void serveIndex() {
     }
     // Also parse globals array similarly (already covered by generic loop since arrays share structure)
     if (role==0){
-      // Update leader legacy snapshot for state/UI; renderer uses leaderParams
-      leaderCfg.animIndex = animIndex;
-      leaderCfg.speed = ps.speed; leaderCfg.phase = ps.phase; leaderCfg.width = (animIndex==4)? ps.singleIndex : ps.width; leaderCfg.branchMode = ps.branch; leaderCfg.invert = ps.invert;
+      // Update leader index and globals mirror; renderer uses leaderParams
+      leaderAnimIndex = animIndex;
       globalSpeed = ps.globalSpeed; globalMin = ps.globalMin; globalMax = ps.globalMax;
 #if defined(ARDUINO_ARCH_ESP32)
       // Persist globals if changed significantly
@@ -481,9 +437,8 @@ void serveIndex() {
       }
 #endif
     } else {
-      followerCfg.animIndex = animIndex;
-      // Update follower legacy snapshot for state/UI; renderer uses followerParams
-      followerCfg.speed = ps.speed; followerCfg.phase = ps.phase; followerCfg.width = (animIndex==4)? ps.singleIndex : ps.width; followerCfg.branchMode = ps.branch; followerCfg.invert = ps.invert;
+      followerAnimIndex = animIndex;
+      // Update globals mirror; renderer uses followerParams
       globalSpeed = ps.globalSpeed; globalMin = ps.globalMin; globalMax = ps.globalMax;
       // Send out updated full param set for follower immediately
       sendAllParams(1, animIndex, followerParams);
@@ -510,33 +465,28 @@ void serveIndex() {
   globalMax = getF("globalMax", globalMax);
   if (globalMax < globalMin) globalMax = globalMin;
 
-    leaderCfg.animIndex = (uint8_t)getI("L_anim", leaderCfg.animIndex);
-    leaderCfg.speed = getF("L_speed", leaderCfg.speed);
-    leaderCfg.phase = getF("L_phase", leaderCfg.phase);
-    leaderCfg.width = (uint8_t)getI("L_width", leaderCfg.width);
-    leaderCfg.branchMode = getB("L_branch", leaderCfg.branchMode);
-    leaderCfg.invert = getB("L_invert", leaderCfg.invert);
+    leaderAnimIndex = (uint8_t)getI("L_anim", leaderAnimIndex);
 
-    followerCfg.animIndex = (uint8_t)getI("F_anim", followerCfg.animIndex);
-    followerCfg.speed = getF("F_speed", followerCfg.speed);
-    followerCfg.phase = getF("F_phase", followerCfg.phase);
-    followerCfg.width = (uint8_t)getI("F_width", followerCfg.width);
-    followerCfg.branchMode = getB("F_branch", followerCfg.branchMode);
-    followerCfg.invert = getB("F_invert", followerCfg.invert);
-
-  // Keep legacy animIndex in sync for UI/state only (SYNC no longer carries anim)
-  animIndex = leaderCfg.animIndex;
+    followerAnimIndex = (uint8_t)getI("F_anim", followerAnimIndex);
+    float F_speed = getF("F_speed", followerParams.speed);
+    float F_phase = getF("F_phase", followerParams.phase);
+    uint8_t F_width = (uint8_t)getI("F_width", (int)followerParams.width);
+    bool F_branch = getB("F_branch", followerParams.branch);
+    bool F_invert = getB("F_invert", followerParams.invert);
 
   // Update followerParams with legacy form subset (ParamSet is source of truth for renderer)
-  Anim::setParamField(followerParams, AnimSchema::PID_SPEED, followerCfg.speed);
-  Anim::setParamField(followerParams, AnimSchema::PID_PHASE, followerCfg.phase);
-  Anim::setParamField(followerParams, (followerCfg.animIndex==4)? AnimSchema::PID_SINGLE_IDX : AnimSchema::PID_WIDTH, followerCfg.width);
-  Anim::setParamField(followerParams, AnimSchema::PID_BRANCH, followerCfg.branchMode?1.0f:0.0f);
-  Anim::setParamField(followerParams, AnimSchema::PID_INVERT, followerCfg.invert?1.0f:0.0f);
+  Anim::setParamField(followerParams, AnimSchema::PID_SPEED, F_speed);
+  Anim::setParamField(followerParams, AnimSchema::PID_PHASE, F_phase);
+  Anim::setParamField(followerParams, (followerAnimIndex==4)? AnimSchema::PID_SINGLE_IDX : AnimSchema::PID_WIDTH, F_width);
+  Anim::setParamField(followerParams, AnimSchema::PID_BRANCH, F_branch?1.0f:0.0f);
+  Anim::setParamField(followerParams, AnimSchema::PID_INVERT, F_invert?1.0f:0.0f);
   Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_SPEED, globalSpeed);
   Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MIN, globalMin);
   Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MAX, globalMax);
-  sendAllParams(1, followerCfg.animIndex, followerParams);
+  sendAllParams(1, followerAnimIndex, followerParams);
+
+  // Keep legacy animIndex in sync for SYNC compatibility
+  animIndex = leaderAnimIndex;
 
 #if defined(ARDUINO_ARCH_ESP32)
   // Persist globals if changed significantly
@@ -554,58 +504,15 @@ void serveIndex() {
 } node;
 
 void setup(){
-    String j = "{";
-    // Legacy globals for compatibility
-    j += "\"globalSpeed\":" + String(globalSpeed, 3) + ",";
-    j += "\"globalMin\":" + String(globalMin, 3) + ",";
-    j += "\"globalMax\":" + String(globalMax, 3) + ",";
-    // Leader block
-    j += "\"leader\":";
-    j += "{";
-    j += "\"animIndex\":" + String(leaderCfg.animIndex) + ",";
-    j += "\"speed\":" + String(leaderCfg.speed,3) + ",";
-    j += "\"phase\":" + String(leaderCfg.phase,3) + ",";
-    j += "\"width\":" + String(leaderCfg.width) + ",";
-    j += "\"branchMode\":" + String(leaderCfg.branchMode?"true":"false") + ",";
-    j += "\"invert\":" + String(leaderCfg.invert?"true":"false") + ",";
-    // Dynamic params snapshot
-    j += "\"params\":[";
-    for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
-      AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
-      if (i) j += ',';
-      j += '{';
-      j += "\"id\":" + String(pd.id) + ",\"value\":" + String(Anim::getParamField(leaderParams, pd.id), 5);
-      j += '}';
-    }
-    j += "]},";
-    // Follower block
-    j += "\"follower\":";
-    j += "{";
-    j += "\"animIndex\":" + String(followerCfg.animIndex) + ",";
-    j += "\"speed\":" + String(followerCfg.speed,3) + ",";
-    j += "\"phase\":" + String(followerCfg.phase,3) + ",";
-    j += "\"width\":" + String(followerCfg.width) + ",";
-    j += "\"branchMode\":" + String(followerCfg.branchMode?"true":"false") + ",";
-    j += "\"invert\":" + String(followerCfg.invert?"true":"false") + ",";
-    j += "\"params\":[";
-    for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
-      AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
-      if (i) j += ',';
-      j += '{';
-      j += "\"id\":" + String(pd.id) + ",\"value\":" + String(Anim::getParamField(followerParams, pd.id), 5);
-      j += '}';
-    }
-    j += "]},";
-    // Globals array as dynamic snapshot (redundant with legacy fields)
-    j += "\"globals\":[";
-    const uint8_t gIds[3] = { AnimSchema::PID_GLOBAL_SPEED, AnimSchema::PID_GLOBAL_MIN, AnimSchema::PID_GLOBAL_MAX };
-    for (int i=0;i<3;i++){
-      if (i) j += ',';
-      uint8_t gid = gIds[i];
-      j += '{';
-      j += "\"id\":" + String(gid) + ",\"value\":" + String(Anim::getParamField(leaderParams, gid), 5);
-      j += '}';
-    }
-    j += "]";
-    j += "}";
-    server->send(200, "application/json", j);
+  node.isLeader = IS_LEADER; // defined in node_config.h
+  node.comm = createCommunication();
+  node.leds = createLEDs();
+  node.timeif = createTimeIf();
+  node.begin();
+}
+
+void loop(){ node.tick(); 
+  #ifdef ARDUINO
+  delay(10);
+  #endif
+}
