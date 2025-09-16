@@ -136,7 +136,7 @@ struct Node {
         for (uint8_t i=0;i<msg.cfg2_globalCount;i++) {
           Anim::setParamField(followerParams, msg.cfg2_globalIds[i], msg.cfg2_globalValues[i]);
         }
-        // Derive legacy fields from ParamSet (used by renderer)
+        // Update legacy snapshot for serveState/UI; renderer now uses ParamSet directly
         followerCfg.speed = followerParams.speed;
         followerCfg.phase = followerParams.phase;
         followerCfg.width = (followerCfg.animIndex==4) ? followerParams.singleIndex : followerParams.width;
@@ -217,10 +217,12 @@ struct Node {
     static float buf[Anim::TOTAL_LEDS];
     // Use synced time for followers
     uint32_t baseNow = isLeader ? now : (uint32_t)((int32_t)now + timeOffsetMs);
-    float t = (baseNow / 1000.0f) * globalSpeed;
-    // Render based on role-specific config
-    const AnimCfg &cfg = isLeader ? leaderCfg : followerCfg;
-    renderAnim(cfg, t, buf);
+  // Time in seconds (renderer applies globalSpeed from ParamSet internally)
+  float t = (baseNow / 1000.0f);
+  // Render using new schema ParamSet directly
+  const Anim::ParamSet &ps = isLeader ? leaderParams : followerParams;
+  uint8_t aidx = isLeader ? leaderCfg.animIndex : followerCfg.animIndex;
+  Anim::applyAnim(aidx, t, Anim::TOTAL_LEDS, ps, buf);
 
     // FPS and LED values printing every 500 ms
     framesSincePrint++;
@@ -256,14 +258,7 @@ struct Node {
       framesSincePrint = 0;
     }
 
-    // Apply global min/max scaling for all animations
-    float minv = constrain(globalMin, 0.0f, 1.0f);
-    float maxv = constrain(globalMax, minv, 1.0f);
-    float range = maxv - minv;
-    for (uint16_t i = 0; i < Anim::TOTAL_LEDS; ++i) {
-      float v = constrain(buf[i], 0.0f, 1.0f);
-      buf[i] = minv + v * range;
-    }
+  // Note: global min/max scaling is already handled inside Anim::applyAnim
     leds->setLEDs(buf, Anim::TOTAL_LEDS);
 
 #if defined(ARDUINO_ARCH_ESP32)
@@ -443,12 +438,13 @@ void serveIndex() {
     }
     // Also parse globals array similarly (already covered by generic loop since arrays share structure)
     if (role==0){
-      leaderCfg.animIndex = animIndex; // keep legacy sync
-      // derive legacy fields
+      // Update leader legacy snapshot for state/UI; renderer uses leaderParams
+      leaderCfg.animIndex = animIndex;
       leaderCfg.speed = ps.speed; leaderCfg.phase = ps.phase; leaderCfg.width = (animIndex==4)? ps.singleIndex : ps.width; leaderCfg.branchMode = ps.branch; leaderCfg.invert = ps.invert;
       globalSpeed = ps.globalSpeed; globalMin = ps.globalMin; globalMax = ps.globalMax;
     } else {
       followerCfg.animIndex = animIndex;
+      // Update follower legacy snapshot for state/UI; renderer uses followerParams
       followerCfg.speed = ps.speed; followerCfg.phase = ps.phase; followerCfg.width = (animIndex==4)? ps.singleIndex : ps.width; followerCfg.branchMode = ps.branch; followerCfg.invert = ps.invert;
       globalSpeed = ps.globalSpeed; globalMin = ps.globalMin; globalMax = ps.globalMax;
       // Send out updated full param set for follower immediately
@@ -481,10 +477,10 @@ void serveIndex() {
     followerCfg.branchMode = getB("F_branch", followerCfg.branchMode);
     followerCfg.invert = getB("F_invert", followerCfg.invert);
 
-    // Keep legacy animIndex in sync for SYNC packets
-    animIndex = leaderCfg.animIndex;
+  // Keep legacy animIndex in sync for UI/state only (SYNC no longer carries anim)
+  animIndex = leaderCfg.animIndex;
 
-  // Update followerParams with legacy form subset
+  // Update followerParams with legacy form subset (ParamSet is source of truth for renderer)
   Anim::setParamField(followerParams, AnimSchema::PID_SPEED, followerCfg.speed);
   Anim::setParamField(followerParams, AnimSchema::PID_PHASE, followerCfg.phase);
   Anim::setParamField(followerParams, (followerCfg.animIndex==4)? AnimSchema::PID_SINGLE_IDX : AnimSchema::PID_WIDTH, followerCfg.width);
