@@ -7,6 +7,8 @@
 
 ### install heltec boards
 ```bash
+arduino-cli config add board_manager.additional_urls https://resource.heltec.cn/download/package_heltec_esp32_index.json
+arduino-cli core update-index
 arduino-cli core install Heltec-esp32:esp32
 ```
 
