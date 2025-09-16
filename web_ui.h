@@ -400,6 +400,18 @@ function applySequentialSelection(prefix, selectedIndex){
   }
   if (targetPid!=null){
     setParamValueInContainer(containerId, pd=>pd.id===targetPid, selectedIndex);
+    // Immediately send CFG2 for this side with current globals
+    const globals=gatherGlobals();
+    const params=[]; const cont=$(containerId);
+    const row=[...cont.querySelectorAll('.param-row')].find(r=>parseInt(r.dataset.pid,10)===targetPid);
+    if (row){ const inp=row.querySelector('[data-role="value-input"]'); if (inp){ const val=(inp.type==='checkbox')?(inp.checked?1:0):parseFloat(inp.value); params.push({id:targetPid,value:val}); } }
+    // Also include other params in the form (best-effort)
+    cont.querySelectorAll('[data-role="value-input"]').forEach(el=>{
+      const pid=parseInt(el.dataset.pid,10); if(pid===targetPid) return; let v=(el.type==='checkbox')?(el.checked?1:0):parseFloat(el.value); if(!Number.isNaN(v)) params.push({id:pid,value:v});
+    });
+    // Determine role: prefix 'L' -> 0, 'F' -> 1
+    const role = (prefix==='L')?0:1;
+    send(role, singleIdx, params, globals);
   }
 }
 

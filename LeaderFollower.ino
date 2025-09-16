@@ -22,7 +22,7 @@ struct Node {
   LEDInterface *leds;
   TimeInterface *timeif;
   float brightness{1.0f};
-  uint8_t animIndex{1}; // kept for SYNC compatibility (leader uses leaderCfg.animIndex)
+  uint8_t animIndex{1}; // legacy field retained but SYNC no longer carries anim
   uint32_t lastSyncSent{0};
   uint32_t lastPrintMs{0};
   uint32_t framesSincePrint{0};
@@ -87,7 +87,7 @@ struct Node {
   if (isLeader) console.loop();
     Message msg;
   while (comm->poll(msg)) {
-      if (!isLeader && msg.type == Message::SYNC) {
+  if (!isLeader && msg.type == Message::SYNC) {
         // Follower: ACK and apply time sync offset if needed
         comm->sendAck(msg.frame);
   #ifdef ARDUINO
@@ -117,11 +117,7 @@ struct Node {
           // Already close enough
           // Serial.print("[SYNC] Small diff ms="); Serial.println(adiff);
         }
-        // Optionally adopt animation index from leader
-        if (msg.anim_code != 0) {
-          animIndex = (uint8_t)msg.anim_code;
-          followerCfg.animIndex = animIndex;
-        }
+  // SYNC no longer carries animation; animation changes arrive via CFG2 only
       } else if (isLeader && msg.type == Message::ACK) {
         // Handle ACK received by leader
         if (pendingAck && msg.frame == pendingAckFrame) {
@@ -130,6 +126,28 @@ struct Node {
           Serial.print("ACK confirmed for frame "); Serial.println(msg.frame);
           #endif
         }
+      } else if (!isLeader && msg.type == Message::CFG2) {
+        // Followers apply received dynamic follower config
+        followerCfg.animIndex = msg.cfg2_animIndex;
+        // Update followerParams with received pairs
+        for (uint8_t i=0;i<msg.cfg2_paramCount;i++) {
+          Anim::setParamField(followerParams, msg.cfg2_paramIds[i], msg.cfg2_paramValues[i]);
+        }
+        for (uint8_t i=0;i<msg.cfg2_globalCount;i++) {
+          Anim::setParamField(followerParams, msg.cfg2_globalIds[i], msg.cfg2_globalValues[i]);
+        }
+        // Derive legacy fields from ParamSet (used by renderer)
+        followerCfg.speed = followerParams.speed;
+        followerCfg.phase = followerParams.phase;
+        followerCfg.width = (followerCfg.animIndex==4) ? followerParams.singleIndex : followerParams.width;
+        followerCfg.branchMode = followerParams.branch;
+        followerCfg.invert = followerParams.invert;
+        globalSpeed = followerParams.globalSpeed;
+        globalMin = followerParams.globalMin;
+        globalMax = followerParams.globalMax;
+        #ifdef ARDUINO
+        Serial.println("Applied follower CFG2 from leader");
+        #endif
       } else if (isLeader && msg.type == Message::REQ) {
           // Leader: if pending, re-send the SAME frame; otherwise start a new in-flight SYNC
           #ifdef ARDUINO
@@ -141,35 +159,21 @@ struct Node {
             #ifdef ARDUINO
             Serial.print("REQ: resending SAME frame "); Serial.println(pendingAckFrame);
             #endif
-            comm->sendSync(nowReq, pendingAckFrame, Proto::encodeAnimCode(animIndex));
+            comm->sendSync(nowReq, pendingAckFrame);
             lastSyncSent = nowReq;
           } else {
             uint32_t currentFrameReq = nowReq / 33;
             #ifdef ARDUINO
             Serial.print("REQ: sending NEW frame "); Serial.println(currentFrameReq);
             #endif
-            comm->sendSync(nowReq, currentFrameReq, Proto::encodeAnimCode(animIndex));
+            comm->sendSync(nowReq, currentFrameReq);
             lastSyncSent = nowReq;
             pendingAck = true;
             pendingAckFrame = currentFrameReq;
           }
-      } else if (msg.type == Message::BRIGHTNESS) {
+  } else if (msg.type == Message::BRIGHTNESS) {
         brightness = msg.brightness; leds->setBrightness(brightness);
-      } else if (!isLeader && msg.type == Message::CFG) {
-        // Followers apply received follower config
-        followerCfg.animIndex = msg.cfg_animIndex;
-        followerCfg.speed = msg.cfg_speed;
-        followerCfg.phase = msg.cfg_phase;
-        followerCfg.width = msg.cfg_width;
-        followerCfg.branchMode = (msg.cfg_flags & 0x01) != 0;
-        followerCfg.invert = (msg.cfg_flags & 0x02) != 0;
-        globalSpeed = msg.cfg_globalSpeed;
-  globalMin = msg.cfg_min;
-  globalMax = msg.cfg_max;
-    #ifdef ARDUINO
-    Serial.println("Applied follower CFG from leader");
-    #endif
-      }
+  }
     }
   #ifdef ARDUINO
   uint32_t now = millis();
@@ -194,7 +198,7 @@ struct Node {
           #ifdef ARDUINO
           Serial.print("SYNC: new frame "); Serial.println(currentFrame);
           #endif
-      comm->sendSync(now, currentFrame, Proto::encodeAnimCode(leaderCfg.animIndex));
+  comm->sendSync(now, currentFrame);
           lastSyncSent = now;
           pendingAck = true;
           pendingAckFrame = currentFrame;
@@ -205,7 +209,7 @@ struct Node {
           #ifdef ARDUINO
           Serial.print("ACK timeout - resending SAME frame "); Serial.println(pendingAckFrame);
           #endif
-      comm->sendSync(now, pendingAckFrame, Proto::encodeAnimCode(leaderCfg.animIndex));
+  comm->sendSync(now, pendingAckFrame);
           lastSyncSent = now;
         }
       }
@@ -291,7 +295,7 @@ struct Node {
   }
 
   // --- Serial console ---
-  static void cbSendSync(void* u){ Node* self = reinterpret_cast<Node*>(u); uint32_t now = millis(); uint32_t frame = now/33; self->comm->sendSync(now, frame, Proto::encodeAnimCode(self->leaderCfg.animIndex)); }
+  static void cbSendSync(void* u){ Node* self = reinterpret_cast<Node*>(u); uint32_t now = millis(); uint32_t frame = now/33; self->comm->sendSync(now, frame); }
   
   static void cbSetBrightness(void* u, float b){ Node* self = reinterpret_cast<Node*>(u); self->brightness = constrain(b,0.0f,1.0f); self->leds->setBrightness(self->brightness); }
   static void cbApplyFollowerCfg2(void* u, uint8_t animIndex, const uint8_t* ids, const float* vals, uint8_t count){

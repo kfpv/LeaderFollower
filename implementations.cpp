@@ -87,12 +87,11 @@ class HeltecLoRa : public CommunicationInterface {
     instance_ = this;
   }
 
-  bool sendSync(uint32_t time_ms, uint32_t frame, uint16_t animCode) override {
-  Proto::SyncPacket p; p.time_ms = time_ms; p.frame = frame; p.anim_code = animCode;
+  bool sendSync(uint32_t time_ms, uint32_t frame) override {
+  Proto::SyncPacket p; p.time_ms = time_ms; p.frame = frame;
   // Log transmit
   Serial.print("TX SYNC time_ms="); Serial.print(p.time_ms);
   Serial.print(" frame="); Serial.print(p.frame);
-  Serial.print(" anim="); Serial.println(p.anim_code);
   return sendRaw((uint8_t*)&p, sizeof(p));
   }
   bool sendAck(uint32_t frame) override {
@@ -108,43 +107,7 @@ class HeltecLoRa : public CommunicationInterface {
   bool sendReq() override {
   Proto::ReqPacket p; Serial.println("TX REQ"); return sendRaw((uint8_t*)&p, sizeof(p));
   }
-  bool sendAnimCfg(uint8_t role,
-                   uint8_t animIndex,
-                   float speed,
-                   float phase,
-                   uint8_t width,
-                   bool branchMode,
-                   bool invert,
-                   float globalSpeed,
-                   float minScale,
-                   float maxScale) override {
-    Proto::CfgPacket p;
-    p.role = role;
-    p.animIndex = animIndex;
-    p.width = width;
-    if (animIndex == 4) {
-      // Encode single LED index into upper bits of flags (bits2-7)
-      uint8_t idx = width & 0x3F; // 0..63
-      p.flags = (idx << Proto::FLAG_SINGLE_SHIFT);
-    } else {
-      p.flags = (branchMode ? Proto::FLAG_BRANCH : 0) | (invert ? Proto::FLAG_INVERT : 0);
-    }
-    p.speed = speed;
-    p.phase = phase;
-    p.globalSpeed = globalSpeed;
-    p.minScale = minScale;
-    p.maxScale = maxScale;
-    Serial.print("TX CFG role="); Serial.print(p.role);
-    Serial.print(" anim="); Serial.print(p.animIndex);
-    Serial.print(" speed="); Serial.print(p.speed);
-    Serial.print(" phase="); Serial.print(p.phase);
-    Serial.print(" width="); Serial.print(p.width);
-    Serial.print(" flags="); Serial.print(p.flags);
-    Serial.print(" gSpeed="); Serial.print(p.globalSpeed);
-    Serial.print(" min="); Serial.print(p.minScale);
-    Serial.print(" max="); Serial.println(p.maxScale);
-    return sendRaw((uint8_t*)&p, sizeof(p));
-  }
+  // Removed legacy sendAnimCfg; use sendAnimCfg2
 
   bool sendAnimCfg2(uint8_t role,
                     uint8_t animIndex,
@@ -176,10 +139,10 @@ class HeltecLoRa : public CommunicationInterface {
     if (type == Proto::MSG_SYNC && _rxSize >= sizeof(Proto::SyncPacket)) {
       auto *p = reinterpret_cast<Proto::SyncPacket*>(_rxBuf);
       outMsg.type = (Message::Type)Proto::MSG_SYNC;
-      outMsg.time_ms = p->time_ms; outMsg.frame = p->frame; outMsg.anim_code = p->anim_code;
+      outMsg.time_ms = p->time_ms; outMsg.frame = p->frame; outMsg.anim_code = 0;
   Serial.print("RX SYNC time_ms="); Serial.print(p->time_ms);
   Serial.print(" frame="); Serial.print(p->frame);
-  Serial.print(" anim="); Serial.println(p->anim_code);
+  Serial.println();
       return true;
     } else if (type == Proto::MSG_ACK && _rxSize >= sizeof(Proto::AckPacket)) {
   auto *p = reinterpret_cast<Proto::AckPacket*>(_rxBuf);
@@ -191,36 +154,7 @@ class HeltecLoRa : public CommunicationInterface {
   outMsg.type = (Message::Type)Proto::MSG_BRIGHTNESS; outMsg.brightness = p->percent/100.0f;
   Serial.print("RX BRIGHTNESS percent="); Serial.println(p->percent);
   return true;
-  } else if (type == Proto::MSG_CFG && _rxSize >= sizeof(Proto::CfgPacket)) {
-  auto *p = reinterpret_cast<Proto::CfgPacket*>(_rxBuf);
-  outMsg.type = Message::CFG;
-  outMsg.cfg_role = p->role;
-  outMsg.cfg_animIndex = p->animIndex;
-  if (p->animIndex == 4) {
-    // Extract single LED index from flags bits2-7
-    uint8_t raw = (p->flags >> Proto::FLAG_SINGLE_SHIFT) & 0x3F;
-    outMsg.cfg_width = raw; // reuse width field in message for LED index
-    outMsg.cfg_flags = 0;   // branch/invert not applicable for single
-  } else {
-    outMsg.cfg_width = p->width;
-    outMsg.cfg_flags = p->flags;
-  }
-  outMsg.cfg_speed = p->speed;
-  outMsg.cfg_phase = p->phase;
-  outMsg.cfg_globalSpeed = p->globalSpeed;
-  outMsg.cfg_min = p->minScale;
-  outMsg.cfg_max = p->maxScale;
-  Serial.print("RX CFG role="); Serial.print(p->role);
-  Serial.print(" anim="); Serial.print(p->animIndex);
-  Serial.print(" speed="); Serial.print(p->speed);
-  Serial.print(" phase="); Serial.print(p->phase);
-  Serial.print(" width="); Serial.print(p->width);
-  Serial.print(" flags="); Serial.print(p->flags);
-  Serial.print(" gSpeed="); Serial.print(p->globalSpeed);
-  Serial.print(" min="); Serial.print(p->minScale);
-  Serial.print(" max="); Serial.println(p->maxScale);
-  return true;
-    } else if (type == Proto::MSG_CFG2) {
+  } else if (type == Proto::MSG_CFG2) {
       // Dynamic configuration decode
       DynCfg::ParamValue animVals[16]; uint8_t animCount=0;
       DynCfg::ParamValue globalVals[8]; uint8_t globalCount=0;
