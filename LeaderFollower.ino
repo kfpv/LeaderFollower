@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include "web_ui.h"
+#include <Preferences.h>
 #endif
 #include "serial_console.h"
 
@@ -59,6 +60,10 @@ struct Node {
 #if defined(ARDUINO_ARCH_ESP32)
   // Web UI (leader only)
   WebServer *server{nullptr};
+  // Persistent storage for globals
+  Preferences prefs;
+  float lastSavedGMin{-9999.0f};
+  float lastSavedGMax{9999.0f};
 #endif
   SerialConsole console;
 
@@ -75,6 +80,22 @@ struct Node {
   followerCfg.animIndex = animIndex;
 
 #if defined(ARDUINO_ARCH_ESP32)
+  // Init NVS and load persisted global min/max if present; apply to both ParamSets
+  prefs.begin("vivid", false);
+  bool haveMin = prefs.isKey("gmin");
+  bool haveMax = prefs.isKey("gmax");
+  if (haveMin && haveMax) {
+    float gmin = prefs.getFloat("gmin", 0.0f);
+    float gmax = prefs.getFloat("gmax", 1.0f);
+    // Apply to param sets and legacy mirrors
+    leaderParams.globalMin = gmin; leaderParams.globalMax = gmax;
+    followerParams.globalMin = gmin; followerParams.globalMax = gmax;
+    globalMin = gmin; globalMax = gmax;
+    lastSavedGMin = gmin; lastSavedGMax = gmax;
+  } else {
+    // Initialize lastSaved with current defaults to avoid first-frame write
+    lastSavedGMin = globalMin; lastSavedGMax = globalMax;
+  }
   if (isLeader) {
     setupWiFiAndServer();
   }
@@ -145,6 +166,15 @@ struct Node {
         globalSpeed = followerParams.globalSpeed;
         globalMin = followerParams.globalMin;
         globalMax = followerParams.globalMax;
+#if defined(ARDUINO_ARCH_ESP32)
+        // Persist globals if changed significantly
+        auto fabsf_local = [](float x){ return x < 0 ? -x : x; };
+        if (fabsf_local(globalMin - lastSavedGMin) > 0.001f || fabsf_local(globalMax - lastSavedGMax) > 0.001f) {
+          prefs.putFloat("gmin", globalMin);
+          prefs.putFloat("gmax", globalMax);
+          lastSavedGMin = globalMin; lastSavedGMax = globalMax;
+        }
+#endif
         #ifdef ARDUINO
         Serial.println("Applied follower CFG2 from leader");
         #endif
@@ -434,6 +464,15 @@ void serveIndex() {
       leaderCfg.animIndex = animIndex;
       leaderCfg.speed = ps.speed; leaderCfg.phase = ps.phase; leaderCfg.width = (animIndex==4)? ps.singleIndex : ps.width; leaderCfg.branchMode = ps.branch; leaderCfg.invert = ps.invert;
       globalSpeed = ps.globalSpeed; globalMin = ps.globalMin; globalMax = ps.globalMax;
+#if defined(ARDUINO_ARCH_ESP32)
+      // Persist globals if changed significantly
+      auto fabsf_local = [](float x){ return x < 0 ? -x : x; };
+      if (fabsf_local(globalMin - lastSavedGMin) > 0.001f || fabsf_local(globalMax - lastSavedGMax) > 0.001f) {
+        prefs.putFloat("gmin", globalMin);
+        prefs.putFloat("gmax", globalMax);
+        lastSavedGMin = globalMin; lastSavedGMax = globalMax;
+      }
+#endif
     } else {
       followerCfg.animIndex = animIndex;
       // Update follower legacy snapshot for state/UI; renderer uses followerParams
@@ -441,6 +480,15 @@ void serveIndex() {
       globalSpeed = ps.globalSpeed; globalMin = ps.globalMin; globalMax = ps.globalMax;
       // Send out updated full param set for follower immediately
       sendAllParams(1, animIndex, followerParams);
+#if defined(ARDUINO_ARCH_ESP32)
+      // Persist globals if changed significantly (follower side could be remote UI too)
+      auto fabsf_local = [](float x){ return x < 0 ? -x : x; };
+      if (fabsf_local(globalMin - lastSavedGMin) > 0.001f || fabsf_local(globalMax - lastSavedGMax) > 0.001f) {
+        prefs.putFloat("gmin", globalMin);
+        prefs.putFloat("gmax", globalMax);
+        lastSavedGMin = globalMin; lastSavedGMax = globalMax;
+      }
+#endif
     }
     server->send(200, "application/json", "{\"ok\":true}");
   }
@@ -482,6 +530,16 @@ void serveIndex() {
   Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MIN, globalMin);
   Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MAX, globalMax);
   sendAllParams(1, followerCfg.animIndex, followerParams);
+
+#if defined(ARDUINO_ARCH_ESP32)
+  // Persist globals if changed significantly
+  auto fabsf_local = [](float x){ return x < 0 ? -x : x; };
+  if (fabsf_local(globalMin - lastSavedGMin) > 0.001f || fabsf_local(globalMax - lastSavedGMax) > 0.001f) {
+    prefs.putFloat("gmin", globalMin);
+    prefs.putFloat("gmax", globalMax);
+    lastSavedGMin = globalMin; lastSavedGMax = globalMax;
+  }
+#endif
 
     server->send(200, "text/plain", "applied");
   }
