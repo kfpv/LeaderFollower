@@ -1,0 +1,1 @@
+sometimes global min global max gets overwritten

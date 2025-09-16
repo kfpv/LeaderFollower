@@ -97,7 +97,9 @@ struct Node {
     setupWiFiAndServer();
   }
 #endif
+  #ifdef ARDUINO
   if (isLeader) initConsole();
+  #endif
   }
 
   void tick() {
