@@ -12,7 +12,7 @@ bun install
 
 ## development
 
-### rebuild after header changes
+### rebuild after animation changes
 
 if you make changes to `animations.h` or `anim_schema.h`, rebuild with:
 
