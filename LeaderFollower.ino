@@ -337,6 +337,73 @@ struct Node {
     comm->sendAnimCfg2(role, animIndex, ids, vals, count, nullptr, nullptr, 0);
   }
 
+  // --- Favorites (leader only) ---
+  String extractNameFromJson(const String &js){
+    int idx = js.indexOf("\"name\"");
+    if (idx<0) return String("favorite");
+    idx = js.indexOf(':', idx); if (idx<0) return String("favorite"); idx++;
+    while (idx < (int)js.length() && (js[idx]==' ')) idx++;
+    if (idx < (int)js.length() && js[idx]=='\"'){
+      int end = js.indexOf('"', idx+1);
+      if (end>idx) return js.substring(idx+1, end);
+    }
+    // Fallback: number or bare
+    int end = idx; while (end<(int)js.length() && js[end]!=',' && js[end] != '}' && js[end] != '\n') end++;
+    return js.substring(idx,end);
+  }
+
+  void serveFavorites(){
+    uint8_t count = prefs.getUChar("fav_count", 0);
+    String j = "{\"items\":[";
+    for(uint8_t i=0;i<count;i++){
+      if (i) j += ',';
+      String key = String("fav_") + String(i);
+      String cfg = prefs.getString(key.c_str(), "{}");
+      String nm = extractNameFromJson(cfg);
+      j += "{\"id\":" + String(i) + ",\"name\":\"" + nm + "\",\"cfg\":" + cfg + "}";
+    }
+    j += "]}";
+    server->send(200, "application/json", j);
+  }
+
+  void handleFavAdd(){
+    String body = server->arg("plain");
+    uint8_t count = prefs.getUChar("fav_count", 0);
+    String key = String("fav_") + String(count);
+    prefs.putString(key.c_str(), body);
+    prefs.putUChar("fav_count", (uint8_t)(count+1));
+    server->send(200, "application/json", "{\"ok\":true,\"id\":" + String(count) + "}");
+  }
+
+  void handleFavDelete(){
+    // Accept id either as query arg or in JSON body {id:n}
+    int id = -1;
+    if (server->hasArg("id")) { id = server->arg("id").toInt(); }
+    if (id < 0) {
+      String body = server->arg("plain");
+      int idx = body.indexOf("\"id\"");
+      if (idx >= 0) { idx = body.indexOf(':', idx); if (idx>=0){ idx++; while (idx<(int)body.length() && body[idx]==' ') idx++; int end=idx; while (end<(int)body.length() && isdigit(body[end])) end++; id = body.substring(idx,end).toInt(); } }
+    }
+    uint8_t count = prefs.getUChar("fav_count", 0);
+    if (id < 0 || id >= count) { server->send(400, "application/json", "{\"ok\":false,\"error\":\"bad id\"}"); return; }
+    // Shift entries down from id+1 .. count-1
+    for (int i=id; i<(int)count-1; ++i){
+      String srcKey = String("fav_") + String(i+1);
+      String dstKey = String("fav_") + String(i);
+      String val = prefs.getString(srcKey.c_str(), "{}");
+      prefs.putString(dstKey.c_str(), val);
+    }
+    // Remove last
+    String lastKey = String("fav_") + String(count-1);
+    #if ESP_IDF_VERSION_MAJOR >= 4 || defined(ESP_ARDUINO_VERSION)
+    prefs.remove(lastKey.c_str());
+    #else
+    prefs.putString(lastKey.c_str(), "");
+    #endif
+    prefs.putUChar("fav_count", (uint8_t)(count-1));
+    server->send(200, "application/json", "{\"ok\":true}");
+  }
+
   void setupWiFiAndServer() {
     static WebServer srv(80);
     server = &srv;
@@ -351,6 +418,9 @@ struct Node {
   server->on("/api/state", HTTP_GET, [this]() { serveState(); });
   server->on("/api/apply", HTTP_POST, [this]() { handleApply(); }); // legacy form
   server->on("/api/cfg2", HTTP_POST, [this]() { handleCfg2(); });
+  server->on("/api/favorites", HTTP_GET, [this]() { serveFavorites(); });
+  server->on("/api/favorites/add", HTTP_POST, [this]() { handleFavAdd(); });
+  server->on("/api/favorites/delete", HTTP_POST, [this]() { handleFavDelete(); });
     server->begin();
   }
 

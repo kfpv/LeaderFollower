@@ -85,29 +85,51 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
     input[type=range]::-moz-range-track{height:6px;background:#222a3d;border-radius:4px;border:1px solid #293146}
     input[type=range]::-moz-range-thumb{height:18px;width:18px;border-radius:50%;background:var(--accent2);border:2px solid #0f1116;box-shadow:0 0 0 3px #0f1116,0 0 0 4px var(--accent2);cursor:pointer;transition:.2s background,.2s box-shadow}
     input[type=range]:focus::-moz-range-thumb{background:var(--accent1);box-shadow:0 0 0 3px #0f1116,0 0 0 4px var(--accent1)}
+    /* Favorites modal */
+    .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);z-index:10000}
+    .modal[hidden]{display:none}
+    .modal-panel{background:var(--panel);border:1px solid var(--outline);border-radius:12px;min-width:280px;max-width:560px;width:92%;max-height:70vh;overflow:auto;box-shadow:0 10px 28px rgba(0,0,0,.5);padding:14px}
+    .modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+    .fav-list{display:flex;flex-direction:column;gap:8px}
+    .fav-row{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--outline);background:#1b2030;border-radius:10px;padding:10px}
+    .fav-name{font:600 13px system-ui;color:var(--text)}
+    .fav-details{border:1px dashed var(--outline);border-radius:10px;padding:10px;margin:6px 0 12px;background:#12172a}
+    .fav-actions{display:flex;gap:8px;margin-top:8px}
   </style>
 </head>
 <body>
   <header>
     <div class="nav">
       <h1>Vivid Controls</h1>
-      <nav class="navlinks">
-        <a href="#" data-mode="normal" class="navlink active">Normal</a>
-        <a href="#" data-mode="sequential" class="navlink">Sequential</a>
-        <a href="#" data-mode="mapping" class="navlink disabled" title="Not implemented">Mapping</a>
-      </nav>
-  <div class="toolbar">
-        <button id="btnImport" title="Import config" class="navlink" aria-label="Import">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-import-icon lucide-import"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4"/></svg>
-        </button>
-        <button id="btnExport" title="Export config" class="navlink" aria-label="Export">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-copy-icon lucide-clipboard-copy"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg>
-        </button>
-      </div>
+       <nav class="navlinks">
+         <a href="#" data-mode="normal" class="navlink active">Normal</a>
+         <a href="#" data-mode="sequential" class="navlink">Sequential</a>
+         <a href="#" data-mode="mapping" class="navlink disabled" title="Not implemented">Mapping</a>
+       </nav>
+   <div class="toolbar">
+         <button id="btnImport" title="Import config" class="navlink" aria-label="Import">
+           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-import-icon lucide-import"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4"/></svg>
+         </button>
+         <button id="btnExport" title="Export config" class="navlink" aria-label="Export">
+           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-clipboard-copy-icon lucide-clipboard-copy"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M16 4h2a2 2 0 0 1 2 2v4"/><path d="M21 14H11"/><path d="m15 10-4 4 4 4"/></svg>
+         </button>
+         <button id="btnFavAdd" title="Add favorite" class="navlink" aria-label="Add favorite" disabled>
+           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-star-icon lucide-star"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/></svg>
+         </button>
+         <button id="btnFavOpen" title="Open favorites" class="navlink" aria-label="Open favorites" disabled>
+           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user-star-icon lucide-user-star"><path d="M16.051 12.616a1 1 0 0 1 1.909.024l.737 1.452a1 1 0 0 0 .737.535l1.634.256a1 1 0 0 1 .588 1.806l-1.172 1.168a1 1 0 0 0-.282.866l.259 1.613a1 1 0 0 1-1.541 1.134l-1.465-.75a1 1 0 0 0-.912 0l-1.465.75a1 1 0 0 1-1.539-1.133l.258-1.613a1 1 0 0 0-.282-.866l-1.156-1.153a1 1 0 0 1 .572-1.822l1.633-.256a1 1 0 0 0 .737-.535z"/><path d="M8 15H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/></svg>
+         </button>
+       </div>
       <button class="hamburger" aria-label="menu" aria-expanded="false">☰</button>
     </div>
   </header>
-  <div class="container">
+   <div class="container">
+    <div id="favModal" class="modal" hidden>
+      <div class="modal-panel">
+        <div class="modal-header"><div class="pill">Favorites</div><button id="favClose" class="navlink">Close</button></div>
+        <div id="favList" class="fav-list"></div>
+      </div>
+    </div>
     <div class="card" id="globalsCard">
       <div class="pill">Globals</div>
       <div id="G_paramContainer"></div>
@@ -300,6 +322,51 @@ async function send(role, animIndex, params, globals){
     await fetch('/api/cfg2',{method:'POST',headers:{'Content-Type':'application/json'},body});
   }catch(e){console.error('send failed',e);} }
 
+// ----- Favorites -----
+let FAVS=[]; let FAVS_LOADED=false;
+function getAnimName(index){ const a=(SCHEMA.animations||[]).find(x=>x&&x.index===Number(index)); return a? a.name : ('#'+String(index)); }
+function getParamNameById(pid){ const pd=paramMap.get(Number(pid)); return pd? pd.name : ('pid '+String(pid)); }
+function fmtVal(v){ if(typeof v==='number'){ const s=v.toFixed(3); return s.replace(/\.0+$/,'').replace(/(\.[1-9]*)0+$/,'$1'); } return String(v); }
+function renderFavDetails(cfg, item){ const wrap=document.createElement('div'); wrap.className='fav-details';
+  const secG=document.createElement('div'); secG.innerHTML='<div class="pill">Globals</div>';
+  const ulG=document.createElement('ul'); ulG.style.margin='8px 0'; ulG.style.paddingLeft='18px'; ulG.style.color='var(--muted)';
+  if(cfg && cfg.globals && typeof cfg.globals.globalSpeed==='number'){ const li=document.createElement('li'); li.textContent='globalSpeed: '+fmtVal(cfg.globals.globalSpeed); ulG.appendChild(li); }
+  secG.appendChild(ulG); wrap.appendChild(secG);
+  const addSide=(label, side)=>{ const sec=document.createElement('div'); sec.innerHTML='<div class="pill">'+label+'</div>'; const meta=document.createElement('div'); meta.style.margin='6px 0'; meta.style.color='var(--muted)'; meta.textContent='Anim: '+getAnimName(side&&side.animIndex)+' (index '+(side&&side.animIndex)+')'; sec.appendChild(meta); const ul=document.createElement('ul'); ul.style.margin='4px 0 10px'; ul.style.paddingLeft='18px'; ul.style.color='var(--muted)';
+    const params=side&&Array.isArray(side.params)? side.params : []; params.forEach(p=>{ if(p&&typeof p.id==='number'){ const li=document.createElement('li'); li.textContent=getParamNameById(p.id)+': '+fmtVal(p.value); ul.appendChild(li);} });
+    if(!params.length){ const li=document.createElement('li'); li.textContent='(no params)'; ul.appendChild(li); }
+    sec.appendChild(ul); wrap.appendChild(sec); };
+  addSide('Leader', cfg&&cfg.leader?cfg.leader:{});
+  addSide('Follower', cfg&&cfg.follower?cfg.follower:{});
+  const actions=document.createElement('div'); actions.className='fav-actions';
+  const btnLoad=document.createElement('button'); btnLoad.type='button'; btnLoad.className='navlink'; btnLoad.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-from-line-icon lucide-arrow-up-from-line"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Load</span>';
+  btnLoad.addEventListener('click', async ()=>{ if(!item||typeof item.id!== 'number') return; const ok=window.confirm('Load this favorite? This will overwrite current settings.'); if(!ok) return; try{ btnLoad.disabled=true; btnLoad.textContent='Loading…'; await loadFavorite(item); } finally { btnLoad.disabled=false; btnLoad.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-from-line-icon lucide-arrow-up-from-line"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Load</span>'; } });
+  actions.appendChild(btnLoad);
+  const btnDelete=document.createElement('button'); btnDelete.type='button'; btnDelete.className='navlink'; btnDelete.style.borderColor='var(--danger)'; btnDelete.style.color='var(--danger)'; btnDelete.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</span>';
+  btnDelete.addEventListener('click', async ()=>{ if(!item||typeof item.id!== 'number') return; const ok=window.confirm('Delete this favorite?'); if(!ok) return; try{ btnDelete.disabled=true; btnDelete.textContent='Deleting…'; await deleteFavorite(item.id); } finally { btnDelete.disabled=false; btnDelete.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</span>'; } });
+  actions.appendChild(btnDelete);
+  wrap.appendChild(actions);
+  return wrap; }
+function renderFavList(){ const list=$('favList'); if(!list) return; list.innerHTML=''; if(!Array.isArray(FAVS)||FAVS.length===0){ const d=document.createElement('div'); d.className='fav-row'; d.textContent='No favorites saved yet'; list.appendChild(d); return; }
+  FAVS.forEach(it=>{ const row=document.createElement('div'); row.className='fav-row';
+    const left=document.createElement('div'); left.style.display='flex'; left.style.flexDirection='column';
+    const title=document.createElement('div'); title.className='fav-name'; title.textContent=it&&it.name?String(it.name):'favorite'; left.appendChild(title);
+    const subtitle=document.createElement('div'); subtitle.style.color='var(--muted)'; subtitle.style.fontSize='12px';
+    const cfg = it && it.cfg ? it.cfg : null; const leaderName = cfg? getAnimName(cfg.leader&&cfg.leader.animIndex) : ''; const followerName = cfg? getAnimName(cfg.follower&&cfg.follower.animIndex) : '';
+    subtitle.textContent = 'Leader: '+leaderName+'  •  Follower: '+followerName; left.appendChild(subtitle);
+    const actions=document.createElement('div'); actions.style.display='flex'; actions.style.gap='8px';
+    const btnDetails=document.createElement('button'); btnDetails.type='button'; btnDetails.className='navlink'; btnDetails.textContent='Details';
+    const details = renderFavDetails(cfg||{}, it); details.style.display='none'; details.style.marginTop='10px';
+    btnDetails.addEventListener('click',()=>{ const open = details.style.display==='none'; details.style.display=open?'block':'none'; btnDetails.textContent=open?'Hide':'Details'; });
+    actions.appendChild(btnDetails);
+    row.appendChild(left); row.appendChild(actions); list.appendChild(row); list.appendChild(details);
+  }); }
+async function fetchFavorites(){ try{ const r=await fetch('/api/favorites'); if(!r.ok) throw new Error('fav get failed'); const data=await r.json(); FAVS = Array.isArray(data.items)? data.items : []; FAVS_LOADED=true; }catch(e){ console.warn('favorites load failed', e); FAVS=[]; FAVS_LOADED=false; } finally { const addBtn=$('btnFavAdd'), openBtn=$('btnFavOpen'); if(addBtn) addBtn.disabled=!FAVS_LOADED; if(openBtn) openBtn.disabled=!FAVS_LOADED; } }
+async function addFavorite(){ if(!FAVS_LOADED) return; const name=window.prompt('Name this favorite:'); if(!name) return; const cfg=buildExportConfig(); const body={ name, ...cfg }; try{ const r=await fetch('/api/favorites/add',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); if(!r.ok) throw new Error('fav add failed'); const js=await r.json(); const st=$('status'); if(st){ st.textContent='saved'; setTimeout(()=>st.textContent='\u00a0', 1200); } await fetchFavorites(); }catch(e){ console.error('addFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } } }
+async function deleteFavorite(id){ try{ const r=await fetch('/api/favorites/delete',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})}); if(!r.ok) throw new Error('fav delete failed'); await fetchFavorites(); renderFavList(); }catch(e){ console.error('deleteFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } } }
+function openFavorites(){ renderFavList(); const m=$('favModal'); if(m) m.hidden=false; }
+function closeFavorites(){ const m=$('favModal'); if(m) m.hidden=true; }
+
 // ----- Import / Export -----
 function buildExportConfig(){
   const L=gather('L'); const F=gather('F');
@@ -347,6 +414,24 @@ function applyImportedConfig(cfg){
     side.params.forEach(p=>{ const row=[...cont.querySelectorAll('.param-row')].find(r=>parseInt(r.dataset.pid,10)===p.id); if(row){ const inp=row.querySelector('[data-role="value-input"]'); if(inp){ if(inp.type==='checkbox') inp.checked = !!p.value; else inp.value=String(p.value); const range=row.querySelector('input[type=range]'); if(range && inp.type==='number') range.value=inp.value; } } });
   });
 }
+
+async function loadFavorite(item){
+  try{
+    if(!item||!item.cfg) throw new Error('missing cfg');
+    // Apply into form
+    applyImportedConfig(item.cfg);
+    // Auto-submit to device (leader then follower)
+    const g=gatherGlobals(); const L=gather('L'); const F=gather('F');
+    await send(0,L.animIndex,L.params,g);
+    await new Promise(r=>setTimeout(r,40));
+    await send(1,F.animIndex,F.params,g);
+    const st=$('status'); if(st){ st.textContent='loaded'; setTimeout(()=>st.textContent='\u00a0', 1400); }
+    // Close modal if open
+    closeFavorites();
+  }catch(e){ console.error('loadFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } }
+}
+
+
 
 async function doExport(){
   const cfg=buildExportConfig(); const text=JSON.stringify(cfg);
@@ -460,6 +545,10 @@ async function init(){
   // Wire Import / Export action buttons
   const btnImport=$('btnImport'); if(btnImport){ btnImport.addEventListener('click', (e)=>{ e.preventDefault(); doImport(); }); }
   const btnExport=$('btnExport'); if(btnExport){ btnExport.addEventListener('click', (e)=>{ e.preventDefault(); doExport(); }); }
+  // Wire Favorites buttons
+  const btnFavAdd=$('btnFavAdd'); if(btnFavAdd){ btnFavAdd.addEventListener('click', (e)=>{ e.preventDefault(); addFavorite(); }); }
+  const btnFavOpen=$('btnFavOpen'); if(btnFavOpen){ btnFavOpen.addEventListener('click', (e)=>{ e.preventDefault(); openFavorites(); }); }
+  const favClose=$('favClose'); if(favClose){ favClose.addEventListener('click', (e)=>{ e.preventDefault(); closeFavorites(); }); }
   $('apply').addEventListener('click', async ()=>{
     try {
       const g=gatherGlobals(); const L=gather('L'); const F=gather('F');
@@ -472,6 +561,8 @@ async function init(){
     } catch(err){ console.error(err); const st=$('status'); st.textContent='error'; st.style.background='#ef4444'; }
   });
   loadState();
+  // Load favorites (enables buttons when done)
+  fetchFavorites();
 }
 init();
   </script>

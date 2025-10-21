@@ -31,12 +31,43 @@ static std::string buildIndexHtml(){
 }
 
 static const char *STATE_JSON = R"({
-  \"globalSpeed\":1.0,
-  \"globalMin\":0.0,
-  \"globalMax\":0.1,
-  \"leader\":{\"animIndex\":1,\"speed\":3.0,\"phase\":0.0,\"width\":2,\"branchMode\":true,\"invert\":false},
-  \"follower\":{\"animIndex\":1,\"speed\":3.0,\"phase\":0.0,\"width\":2,\"branchMode\":true,\"invert\":false}
+  "globalSpeed": 1.0,
+  "globalMin": 0.0,
+  "globalMax": 0.1,
+  "leader": {"animIndex": 1, "speed": 3.0, "phase": 0.0, "width": 2, "branchMode": true, "invert": false},
+  "follower": {"animIndex": 1, "speed": 3.0, "phase": 0.0, "width": 2, "branchMode": true, "invert": false}
 })";
+
+// In-memory favorites store for test server
+static std::vector<std::string> gFavorites;
+
+static std::string extractNameFromJson(const std::string &js){
+    auto pos = js.find("\"name\"");
+    if (pos == std::string::npos) return "favorite";
+    pos = js.find(':', pos);
+    if (pos == std::string::npos) return "favorite";
+    ++pos;
+    while (pos < js.size() && js[pos] == ' ') ++pos;
+    if (pos < js.size() && js[pos] == '"'){
+        auto end = js.find('"', pos+1);
+        if (end != std::string::npos && end > pos+1) return js.substr(pos+1, end - (pos+1));
+    }
+    // fallback until comma/brace
+    size_t end = pos; while (end < js.size() && js[end] != ',' && js[end] != '}' && js[end] != '\n' && js[end] != '\r') ++end;
+    return js.substr(pos, end-pos);
+}
+
+static std::string buildFavoritesJson(){
+    std::ostringstream oss; oss << "{\"items\":[";
+    for(size_t i=0;i<gFavorites.size();++i){
+        if (i) oss << ",";
+        const std::string &cfg = gFavorites[i];
+        std::string name = extractNameFromJson(cfg);
+        oss << "{\"id\":"<< i << ",\"name\":\"" << name << "\",\"cfg\":" << cfg << "}";
+    }
+    oss << "]}";
+    return oss.str();
+}
 
 class SimpleHttpServer {
 public:
@@ -65,6 +96,29 @@ private:
         close(server_fd);
     }
 
+    static size_t findHeaderEnd(const std::string &req){
+        auto pos = req.find("\r\n\r\n");
+        if (pos == std::string::npos) return std::string::npos;
+        return pos + 4;
+    }
+
+    static size_t parseContentLength(const std::string &req){
+        size_t pos = 0; size_t clen = 0;
+        while (true){
+            auto p = req.find("\r\n", pos);
+            if (p == std::string::npos) break;
+            auto line = req.substr(pos, p - pos);
+            if (line.empty()) break;
+            const std::string key = "Content-Length:";
+            if (line.size() >= key.size() && strncasecmp(line.c_str(), key.c_str(), key.size()) == 0){
+                std::istringstream iss(line.substr(key.size()));
+                iss >> clen; break;
+            }
+            pos = p + 2; // skip CRLF
+        }
+        return clen;
+    }
+
     static void handleClient(int fd, const std::string &indexHtml){
         char buf[4096]; ssize_t n = recv(fd, buf, sizeof(buf)-1, 0); if(n<=0) return; buf[n]='\0';
         std::string req(buf);
@@ -72,13 +126,63 @@ private:
         {
             std::istringstream iss(req); iss >> method >> path; // naive parse
         }
+
+        // If POST, read full body by Content-Length
+        std::string body;
+        if (method == "POST"){
+            size_t headerEnd = findHeaderEnd(req);
+            size_t clen = parseContentLength(req);
+            if (headerEnd != std::string::npos){
+                body = req.substr(headerEnd);
+                while (body.size() < clen){
+                    ssize_t m = recv(fd, buf, sizeof(buf), 0);
+                    if (m <= 0) break;
+                    body.append(buf, buf + m);
+                }
+                if (body.size() > clen) body.resize(clen);
+            }
+        }
+
         if(path=="/" || path=="/index.html"){
             sendResponse(fd, 200, "text/html; charset=utf-8", indexHtml);
         } else if(path=="/api/state"){
             sendResponse(fd, 200, "application/json", STATE_JSON);
         } else if(path=="/api/cfg2"){
             // Just eat body and reply ok
+            (void)body;
             sendResponse(fd, 200, "application/json", R"({\"ok\":true})");
+        } else if(path=="/api/favorites" && method=="GET"){
+            std::this_thread::sleep_for(std::chrono::seconds(1)); // simulate delay
+            std::string json = buildFavoritesJson();
+            sendResponse(fd, 200, "application/json", json);
+        } else if(path=="/api/favorites/add" && method=="POST"){
+            if (!body.empty()) gFavorites.push_back(body);
+            std::ostringstream oss; oss << "{\"ok\":true,\"id\":" << (gFavorites.size()? gFavorites.size()-1 : 0) << "}";
+            sendResponse(fd, 200, "application/json", oss.str());
+        } else if(path=="/api/favorites/delete" && method=="POST"){
+            // Parse {"id":n} from body
+            int id = -1;
+            if (!body.empty()){
+                auto pos = body.find("\"id\"");
+                if (pos != std::string::npos){
+                    pos = body.find(':', pos);
+                    if (pos != std::string::npos){
+                        ++pos;
+                        while (pos < body.size() && body[pos] == ' ') ++pos;
+                        size_t end = pos;
+                        while (end < body.size() && isdigit((unsigned char)body[end])) ++end;
+                        if (end > pos) {
+                            id = std::stoi(body.substr(pos, end - pos));
+                        }
+                    }
+                }
+            }
+            if (id < 0 || id >= (int)gFavorites.size()){
+                sendResponse(fd, 400, "application/json", "{\"ok\":false,\"error\":\"bad id\"}");
+            } else {
+                gFavorites.erase(gFavorites.begin() + id);
+                sendResponse(fd, 200, "application/json", "{\"ok\":true}");
+            }
         } else {
             sendResponse(fd, 404, "text/plain", "Not found");
         }
