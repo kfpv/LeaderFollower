@@ -95,16 +95,23 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
     .fav-name{font:600 13px system-ui;color:var(--text)}
     .fav-details{border:1px dashed var(--outline);border-radius:10px;padding:10px;margin:6px 0 12px;background:#12172a}
     .fav-actions{display:flex;gap:8px;margin-top:8px}
+    /* Loading overlay */
+    #loadingOverlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);z-index:20000}
+    #loadingOverlay .box{display:flex;flex-direction:column;align-items:center;gap:10px}
+    .spinner{width:40px;height:40px;border-radius:50%;border:3px solid #2a3147;border-top-color:var(--accent2);animation:spin 1s linear infinite}
+    .loading-text{color:var(--muted)}
+    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
   <header>
+    <div id="loadingOverlay"><div class="box"><div class="spinner"></div><div class="loading-text">Loading…</div></div></div>
     <div class="nav">
       <h1>Vivid Controls</h1>
        <nav class="navlinks">
          <a href="#" data-mode="normal" class="navlink active">Normal</a>
          <a href="#" data-mode="sequential" class="navlink">Sequential</a>
-         <a href="#" data-mode="mapping" class="navlink disabled" title="Not implemented">Mapping</a>
+          <a href="#" data-mode="auto" class="navlink">Auto</a>
        </nav>
    <div class="toolbar">
          <button id="btnImport" title="Import config" class="navlink" aria-label="Import">
@@ -134,36 +141,53 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
       <div class="pill">Globals</div>
       <div id="G_paramContainer"></div>
     </div>
-    <div class="tabs">
-      <button class="tab active" data-target="leaderCard">Leader</button>
-      <button class="tab" data-target="followerCard">Follower</button>
-    </div>
-    <div class="twocol">
-      <div class="card active" id="leaderCard">
-        <div class="pill">Leader</div>
-        <div class="mode-normal">
-          <div class="row"><label>Animation</label><select id="L_anim"></select><span></span></div>
-          <div id="L_paramContainer"></div>
+     <div class="tabs">
+       <button class="tab active" data-target="leaderCard">Leader</button>
+       <button class="tab" data-target="followerCard">Follower</button>
+     </div>
+      <div class="card mode-auto" id="autoCard" hidden style="grid-column:1 / -1">
+        <div class="pill">Auto</div>
+        <div class="row"><label>Interval (min)</label><input id="autoInterval" type="number" min="1" step="1" value="1"/><span></span></div>
+        <div class="row"><label>Randomize</label><div class="switch"><input id="autoRandomize" type="checkbox"/><span>shuffle</span></div><span></span></div>
+        <div class="autoFavSection" style="display:flex;flex-direction:column;gap:8px;margin:10px 0">
+          <div class="pill">Favorites</div>
+          <label style="display:flex;align-items:center;gap:8px">
+            <input id="autoSelAll" type="checkbox"/> Select All
+          </label>
+          <div id="autoFavList" class="fav-list"></div>
         </div>
-        <div class="mode-seq" hidden>
-          <div class="led-grid" id="L_ledGrid"></div>
-        </div>
-      </div>
-      <div class="card" id="followerCard">
-        <div class="pill">Follower</div>
-        <div class="mode-normal">
-          <div class="row"><label>Animation</label><select id="F_anim"></select><span></span></div>
-          <div id="F_paramContainer"></div>
-        </div>
-        <div class="mode-seq" hidden>
-          <div class="led-grid" id="F_ledGrid"></div>
+        <div class="actions">
+          <button class="btn" id="autoStart">Start</button>
+          <button class="navlink" id="autoStop">Stop</button>
+          <span id="autoStatus" class="pill">&nbsp;</span>
         </div>
       </div>
-    </div>
-    <div class="actions"><button class="btn" id="apply">Write Settings</button><span id="status" class="pill">&nbsp;</span></div>
-  </div>
-  <script>
-// Schema generated dynamically from anim_schema.h using X-macros
+     <div class="twocol">
+       <div class="card active" id="leaderCard">
+         <div class="pill">Leader</div>
+         <div class="mode-normal">
+           <div class="row"><label>Animation</label><select id="L_anim"></select><span></span></div>
+           <div id="L_paramContainer"></div>
+         </div>
+         <div class="mode-seq" hidden>
+           <div class="led-grid" id="L_ledGrid"></div>
+         </div>
+       </div>
+       <div class="card" id="followerCard">
+         <div class="pill">Follower</div>
+         <div class="mode-normal">
+           <div class="row"><label>Animation</label><select id="F_anim"></select><span></span></div>
+           <div id="F_paramContainer"></div>
+         </div>
+         <div class="mode-seq" hidden>
+           <div class="led-grid" id="F_ledGrid"></div>
+         </div>
+       </div>
+     </div>
+     <div class="actions"><button class="btn" id="apply">Write Settings</button><span id="status" class="pill">&nbsp;</span></div>
+   </div>
+   <script>
+ // Schema generated dynamically from anim_schema.h using X-macros
 const SCHEMA_JSON = ')HTML";
 
 // Generate the JSON schema string
@@ -204,14 +228,31 @@ const $ = (id)=>document.getElementById(id);
 // Navbar mode switching (only links with data-mode act as tabs)
 const modeLinks=[...document.querySelectorAll('.navlink[data-mode]')];
 const hamburger=document.querySelector('.hamburger');
-function setMode(mode){
+  function setMode(mode){
   modeLinks.forEach(a=>a.classList.toggle('active',a.dataset.mode===mode));
   document.querySelectorAll('.mode-normal').forEach(el=>el.hidden=(mode!=='normal'));
   document.querySelectorAll('.mode-seq').forEach(el=>el.hidden=(mode!=='sequential'));
+  const autoCard=document.getElementById('autoCard'); if (autoCard) autoCard.hidden = (mode!=='auto');
+  // Hide/show leader/follower/tabs based on mode
+  const twoCol=document.querySelector('.twocol'); if(twoCol) twoCol.style.display = (mode==='auto') ? 'none' : '';
+  const tabsEl=document.querySelector('.tabs'); if(tabsEl) tabsEl.style.display = (mode==='auto') ? 'none' : '';
+  // Toolbar: Import/Export/Add visible only in normal; Favorites list visible always
+  const hideTools=['btnImport','btnExport','btnFavAdd'].map(id=>document.getElementById(id)).filter(Boolean);
+  hideTools.forEach(el=>{ el.style.display = (mode==='normal') ? '' : 'none'; });
+  const favOpen=document.getElementById('btnFavOpen'); if(favOpen){ favOpen.style.display=''; }
+  // Hide Write Settings button in Auto mode
+  const applyBtn=document.getElementById('apply'); if(applyBtn){ applyBtn.style.display = (mode==='auto') ? 'none' : ''; }
+  // When entering auto mode, refresh config/status
+  if (mode==='auto') {
+    ensureFavoritesLoaded().then(()=>loadAutoConfig()).then(()=>startAutoStatusPolling()).catch(()=>{});
+  } else {
+    stopAutoStatusPolling();
+  }
   const nl=document.querySelector('.navlinks'); nl.classList.remove('open'); hamburger.setAttribute('aria-expanded','false');
-}
-modeLinks.forEach(a=>!a.classList.contains('disabled')&&a.addEventListener('click',e=>{e.preventDefault();setMode(a.dataset.mode);}));
-hamburger.addEventListener('click',()=>{const nl=document.querySelector('.navlinks');const isOpen=nl.classList.toggle('open');hamburger.setAttribute('aria-expanded',String(isOpen));});
+ }
+ modeLinks.forEach(a=>!a.classList.contains('disabled')&&a.addEventListener('click',e=>{e.preventDefault();setMode(a.dataset.mode);}));
+ hamburger.addEventListener('click',()=>{const nl=document.querySelector('.navlinks');const isOpen=nl.classList.toggle('open');hamburger.setAttribute('aria-expanded',String(isOpen));});
+
 
 // Tabs for narrow screens
 function initTabs(){const tabs=[...document.querySelectorAll('.tab')];const leader=$('leaderCard'), follower=$('followerCard');tabs.forEach(t=>t.addEventListener('click',()=>{tabs.forEach(x=>x.classList.remove('active'));t.classList.add('active');[leader,follower].forEach(c=>c.classList.remove('active'));const target=$(t.dataset.target);target.classList.add('active')}));}
@@ -327,7 +368,7 @@ let FAVS=[]; let FAVS_LOADED=false;
 function getAnimName(index){ const a=(SCHEMA.animations||[]).find(x=>x&&x.index===Number(index)); return a? a.name : ('#'+String(index)); }
 function getParamNameById(pid){ const pd=paramMap.get(Number(pid)); return pd? pd.name : ('pid '+String(pid)); }
 function fmtVal(v){ if(typeof v==='number'){ const s=v.toFixed(3); return s.replace(/\.0+$/,'').replace(/(\.[1-9]*)0+$/,'$1'); } return String(v); }
-function renderFavDetails(cfg, item){ const wrap=document.createElement('div'); wrap.className='fav-details';
+function renderFavDetails(cfg, item, readOnly){ const wrap=document.createElement('div'); wrap.className='fav-details';
   const secG=document.createElement('div'); secG.innerHTML='<div class="pill">Globals</div>';
   const ulG=document.createElement('ul'); ulG.style.margin='8px 0'; ulG.style.paddingLeft='18px'; ulG.style.color='var(--muted)';
   if(cfg && cfg.globals && typeof cfg.globals.globalSpeed==='number'){ const li=document.createElement('li'); li.textContent='globalSpeed: '+fmtVal(cfg.globals.globalSpeed); ulG.appendChild(li); }
@@ -338,14 +379,16 @@ function renderFavDetails(cfg, item){ const wrap=document.createElement('div'); 
     sec.appendChild(ul); wrap.appendChild(sec); };
   addSide('Leader', cfg&&cfg.leader?cfg.leader:{});
   addSide('Follower', cfg&&cfg.follower?cfg.follower:{});
-  const actions=document.createElement('div'); actions.className='fav-actions';
-  const btnLoad=document.createElement('button'); btnLoad.type='button'; btnLoad.className='navlink'; btnLoad.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-from-line-icon lucide-arrow-up-from-line"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Load</span>';
-  btnLoad.addEventListener('click', async ()=>{ if(!item||typeof item.id!== 'number') return; const ok=window.confirm('Load this favorite? This will overwrite current settings.'); if(!ok) return; try{ btnLoad.disabled=true; btnLoad.textContent='Loading…'; await loadFavorite(item); } finally { btnLoad.disabled=false; btnLoad.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-from-line-icon lucide-arrow-up-from-line"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Load</span>'; } });
-  actions.appendChild(btnLoad);
-  const btnDelete=document.createElement('button'); btnDelete.type='button'; btnDelete.className='navlink'; btnDelete.style.borderColor='var(--danger)'; btnDelete.style.color='var(--danger)'; btnDelete.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</span>';
-  btnDelete.addEventListener('click', async ()=>{ if(!item||typeof item.id!== 'number') return; const ok=window.confirm('Delete this favorite?'); if(!ok) return; try{ btnDelete.disabled=true; btnDelete.textContent='Deleting…'; await deleteFavorite(item.id); } finally { btnDelete.disabled=false; btnDelete.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</span>'; } });
-  actions.appendChild(btnDelete);
-  wrap.appendChild(actions);
+  if (!readOnly){
+    const actions=document.createElement('div'); actions.className='fav-actions';
+    const btnLoad=document.createElement('button'); btnLoad.type='button'; btnLoad.className='navlink'; btnLoad.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-from-line-icon lucide-arrow-up-from-line"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Load</span>';
+    btnLoad.addEventListener('click', async ()=>{ if(!item||typeof item.id!== 'number') return; const ok=window.confirm('Load this favorite? This will overwrite current settings.'); if(!ok) return; try{ btnLoad.disabled=true; btnLoad.textContent='Loading…'; await loadFavorite(item); } finally { btnLoad.disabled=false; btnLoad.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-from-line-icon lucide-arrow-up-from-line"><path d="m18 9-6-6-6 6"/><path d="M12 3v14"/><path d="M5 21h14"/></svg>Load</span>'; } });
+    actions.appendChild(btnLoad);
+    const btnDelete=document.createElement('button'); btnDelete.type='button'; btnDelete.className='navlink'; btnDelete.style.borderColor='var(--danger)'; btnDelete.style.color='var(--danger)'; btnDelete.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</span>';
+    btnDelete.addEventListener('click', async ()=>{ if(!item||typeof item.id!== 'number') return; const ok=window.confirm('Delete this favorite?'); if(!ok) return; try{ btnDelete.disabled=true; btnDelete.textContent='Deleting…'; await deleteFavorite(item.id); } finally { btnDelete.disabled=false; btnDelete.innerHTML='<span style="display:inline-flex;gap:6px;align-items:center"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Delete</span>'; } });
+    actions.appendChild(btnDelete);
+    wrap.appendChild(actions);
+  }
   return wrap; }
 function renderFavList(){ const list=$('favList'); if(!list) return; list.innerHTML=''; if(!Array.isArray(FAVS)||FAVS.length===0){ const d=document.createElement('div'); d.className='fav-row'; d.textContent='No favorites saved yet'; list.appendChild(d); return; }
   FAVS.forEach(it=>{ const row=document.createElement('div'); row.className='fav-row';
@@ -356,14 +399,93 @@ function renderFavList(){ const list=$('favList'); if(!list) return; list.innerH
     subtitle.textContent = 'Leader: '+leaderName+'  •  Follower: '+followerName; left.appendChild(subtitle);
     const actions=document.createElement('div'); actions.style.display='flex'; actions.style.gap='8px';
     const btnDetails=document.createElement('button'); btnDetails.type='button'; btnDetails.className='navlink'; btnDetails.textContent='Details';
-    const details = renderFavDetails(cfg||{}, it); details.style.display='none'; details.style.marginTop='10px';
+    const details = renderFavDetails(cfg||{}, it, false); details.style.display='none'; details.style.marginTop='10px';
     btnDetails.addEventListener('click',()=>{ const open = details.style.display==='none'; details.style.display=open?'block':'none'; btnDetails.textContent=open?'Hide':'Details'; });
     actions.appendChild(btnDetails);
     row.appendChild(left); row.appendChild(actions); list.appendChild(row); list.appendChild(details);
   }); }
+
+// ----- Auto mode (UI+API) -----
+let AUTO_CFG={ on:false, interval:10, random:false, selections:[], current:{name:'',id:-1,remaining:0}};
+let AUTO_STATUS_TIMER=null;
+let AUTO_LOCAL_REMAIN=0;
+
+function renderAutoFavList(){ const list=$('autoFavList'); if(!list) return; list.innerHTML='';
+  if(!Array.isArray(FAVS)||FAVS.length===0){ const d=document.createElement('div'); d.className='fav-row'; d.textContent='No favorites saved yet'; list.appendChild(d); return; }
+  FAVS.forEach((it)=>{ const row=document.createElement('div'); row.className='fav-row';
+    const left=document.createElement('div'); left.style.display='flex'; left.style.flexDirection='column';
+    const title=document.createElement('div'); title.className='fav-name'; title.textContent=it&&it.name?String(it.name):'favorite'; left.appendChild(title);
+    const subtitle=document.createElement('div'); subtitle.style.color='var(--muted)'; subtitle.style.fontSize='12px';
+    const cfg = it && it.cfg ? it.cfg : null; const leaderName = cfg? getAnimName(cfg.leader&&cfg.leader.animIndex) : ''; const followerName = cfg? getAnimName(cfg.follower&&cfg.follower.animIndex) : '';
+    subtitle.textContent = 'Leader: '+leaderName+'  •  Follower: '+followerName; left.appendChild(subtitle);
+    const right=document.createElement('div'); right.style.display='flex'; right.style.alignItems='center'; right.style.gap='10px';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked = AUTO_CFG.selections.includes(it.id);
+    cb.addEventListener('change', async ()=>{ const id=it.id; const idx=AUTO_CFG.selections.indexOf(id); if(cb.checked){ if(idx<0) AUTO_CFG.selections.push(id); } else { if(idx>=0) AUTO_CFG.selections.splice(idx,1); } updateSelectAllIndeterminate(); await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } });
+    right.appendChild(cb);
+    row.appendChild(left); row.appendChild(right);
+    // read-only: Details without load/delete
+    const details = renderFavDetails(cfg||{}, it, true); details.style.display='none'; details.style.marginTop='10px';
+    const btnDetails=document.createElement('button'); btnDetails.type='button'; btnDetails.className='navlink'; btnDetails.textContent='Details'; btnDetails.style.marginTop='8px'; btnDetails.addEventListener('click',()=>{ const open = details.style.display==='none'; details.style.display=open?'block':'none'; btnDetails.textContent=open?'Hide':'Details'; });
+    list.appendChild(row); list.appendChild(btnDetails); list.appendChild(details);
+  });
+  updateSelectAllIndeterminate();
+}
+
+function updateSelectAllIndeterminate(){ const all=$('autoSelAll'); if(!all) return; const total=Array.isArray(FAVS)?FAVS.length:0; const sel=AUTO_CFG.selections.length; all.indeterminate = sel>0 && sel<total; all.checked = total>0 && sel===total; const startBtn=$('autoStart'); if(startBtn){ startBtn.disabled = (sel===0); } }
+
+function readAutoFormIntoCfg(){ const iv=$('autoInterval'); const rand=$('autoRandomize'); AUTO_CFG.interval = Math.max(1, parseInt(iv.value||'1',10)); AUTO_CFG.random = !!rand.checked; }
+
+async function loadAutoConfig(){ try{ const r=await fetch('/api/auto/config'); if(!r.ok) throw new Error('auto cfg get failed'); const data=await r.json();
+  AUTO_CFG.on=!!data.on; AUTO_CFG.interval = Math.max(1, parseInt(data.interval||'1',10)); AUTO_CFG.random=!!data.random; AUTO_CFG.selections = Array.isArray(data.selections)? data.selections.slice():[]; AUTO_CFG.current = data.current || {name:'',id:-1,remaining:0};
+  AUTO_LOCAL_REMAIN = Math.max(0, parseInt(AUTO_CFG.current.remaining||0,10));
+  // Default to all favorites if none selected
+  if (AUTO_CFG.selections.length===0 && Array.isArray(FAVS) && FAVS.length>0){
+    AUTO_CFG.selections = FAVS.map(it=>it.id);
+    await saveAutoSettings();
+  }
+  $('autoInterval').value=String(AUTO_CFG.interval); $('autoRandomize').checked=AUTO_CFG.random;
+  renderAutoFavList(); updateAutoStatus();
+ } catch(e){ console.warn('loadAutoConfig failed', e); }
+}
+
+async function saveAutoSettings(){ readAutoFormIntoCfg(); const body=JSON.stringify({ interval:AUTO_CFG.interval, random:AUTO_CFG.random, selections:AUTO_CFG.selections });
+  try{ const r=await fetch('/api/auto/settings',{method:'POST',headers:{'Content-Type':'application/json'},body}); if(!r.ok) throw new Error('auto save failed'); } catch(e){ console.warn('saveAutoSettings failed', e); }
+}
+
+async function startAuto(){ await saveAutoSettings(); try{ const r=await fetch('/api/auto/start',{method:'POST'}); if(!r.ok) throw new Error('auto start failed'); AUTO_CFG.on=true; startAutoStatusPolling(true); } catch(e){ console.warn('startAuto failed', e); } }
+async function stopAuto(){ try{ const r=await fetch('/api/auto/stop',{method:'POST'}); if(!r.ok) throw new Error('auto stop failed'); AUTO_CFG.on=false; updateAutoStatus(); stopAutoStatusPolling(); } catch(e){ console.warn('stopAuto failed', e); } }
+
+function updateAutoStatus(){ const pill=$('autoStatus'); if(!pill) return; const startBtn=$('autoStart'); if(startBtn){ const totalFavs = Array.isArray(FAVS)?FAVS.length:0; startBtn.disabled = (totalFavs===0 || AUTO_CFG.selections.length===0); }
+  if(!AUTO_CFG.on){ pill.textContent='stopped'; pill.style.borderColor='var(--outline)'; pill.style.color='var(--muted)'; return; } const nm=AUTO_CFG.current&&AUTO_CFG.current.name?AUTO_CFG.current.name:''; const rem=(typeof AUTO_LOCAL_REMAIN==='number')?Math.max(0,Math.floor(AUTO_LOCAL_REMAIN)):0; pill.textContent = (nm? nm+' • ' : '') + rem + 's left'; pill.style.borderColor='var(--accent2)'; pill.style.color='var(--accent2)'; }
+
+async function localAutoTick(){ if(!AUTO_CFG.on){ updateAutoStatus(); return; } if (AUTO_LOCAL_REMAIN>0){ AUTO_LOCAL_REMAIN -= 1; updateAutoStatus(); return; } try{ await loadAutoConfig(); updateAutoStatus(); } catch(_){} }
+
+function startAutoStatusPolling(){ stopAutoStatusPolling(); // seed remaining from current if present
+  if (typeof AUTO_LOCAL_REMAIN !== 'number' || AUTO_LOCAL_REMAIN<=0){ AUTO_LOCAL_REMAIN = Math.max(0, parseInt(AUTO_CFG.current&&AUTO_CFG.current.remaining||0,10)); }
+  updateAutoStatus(); AUTO_STATUS_TIMER = setInterval(localAutoTick, 1000); }
+function stopAutoStatusPolling(){ if (AUTO_STATUS_TIMER){ clearInterval(AUTO_STATUS_TIMER); AUTO_STATUS_TIMER=null; } }
+
+
+// Wire Auto controls
+(function(){ const selAll=$('autoSelAll'); if(selAll){ selAll.addEventListener('change', async ()=>{ if(!Array.isArray(FAVS)) return; if(selAll.checked){ AUTO_CFG.selections = FAVS.map(it=>it.id); } else { AUTO_CFG.selections = []; } renderAutoFavList(); await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } }); }
+  const startBtn=$('autoStart'); if(startBtn) startBtn.addEventListener('click', startAuto);
+  const stopBtn=$('autoStop'); if(stopBtn) stopBtn.addEventListener('click', stopAuto);
+  const iv=$('autoInterval'); if(iv) iv.addEventListener('change', async ()=>{ await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } });
+  const rand=$('autoRandomize'); if(rand) rand.addEventListener('change', async ()=>{ await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } });
+})();
 async function fetchFavorites(){ try{ const r=await fetch('/api/favorites'); if(!r.ok) throw new Error('fav get failed'); const data=await r.json(); FAVS = Array.isArray(data.items)? data.items : []; FAVS_LOADED=true; }catch(e){ console.warn('favorites load failed', e); FAVS=[]; FAVS_LOADED=false; } finally { const addBtn=$('btnFavAdd'), openBtn=$('btnFavOpen'); if(addBtn) addBtn.disabled=!FAVS_LOADED; if(openBtn) openBtn.disabled=!FAVS_LOADED; } }
-async function addFavorite(){ if(!FAVS_LOADED) return; const name=window.prompt('Name this favorite:'); if(!name) return; const cfg=buildExportConfig(); const body={ name, ...cfg }; try{ const r=await fetch('/api/favorites/add',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); if(!r.ok) throw new Error('fav add failed'); const js=await r.json(); const st=$('status'); if(st){ st.textContent='saved'; setTimeout(()=>st.textContent='\u00a0', 1200); } await fetchFavorites(); }catch(e){ console.error('addFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } } }
-async function deleteFavorite(id){ try{ const r=await fetch('/api/favorites/delete',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})}); if(!r.ok) throw new Error('fav delete failed'); await fetchFavorites(); renderFavList(); }catch(e){ console.error('deleteFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } } }
+async function ensureFavoritesLoaded(){ if (FAVS_LOADED) return; await fetchFavorites(); }
+async function addFavorite(){ if(!FAVS_LOADED) return; const name=window.prompt('Name this favorite:'); if(!name) return; const cfg=buildExportConfig(); const body={ name, ...cfg }; try{ const r=await fetch('/api/favorites/add',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); if(!r.ok) throw new Error('fav add failed'); const js=await r.json(); const st=$('status'); if(st){ st.textContent='saved'; setTimeout(()=>st.textContent='\u00a0', 1200); } await fetchFavorites();
+  // Auto-select newly added favorite if in Auto mode or no selections yet
+  const newId = (js && typeof js.id === 'number') ? js.id : (FAVS.length? FAVS.length-1 : -1);
+  if (newId>=0 && (document.querySelector('.navlink[data-mode].active')?.dataset.mode==='auto' || AUTO_CFG.selections.length===0)){
+    if (!AUTO_CFG.selections.includes(newId)) AUTO_CFG.selections.push(newId);
+    renderAutoFavList(); updateSelectAllIndeterminate();
+  }
+ }catch(e){ console.error('addFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } } }
+async function deleteFavorite(id){ try{ const r=await fetch('/api/favorites/delete',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})}); if(!r.ok) throw new Error('fav delete failed'); await fetchFavorites(); renderFavList(); // refresh auto UI too
+  renderAutoFavList(); updateSelectAllIndeterminate(); if(document.querySelector('.navlink[data-mode].active')?.dataset.mode==='auto'){ await loadAutoConfig(); }
+} catch(e){ console.error('deleteFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } } }
 function openFavorites(){ renderFavList(); const m=$('favModal'); if(m) m.hidden=false; }
 function closeFavorites(){ const m=$('favModal'); if(m) m.hidden=true; }
 
@@ -514,7 +636,7 @@ function buildGrids(){
 
 async function loadState(){
   try{
-    const r=await fetch('/api/state'); if(!r.ok) return; const s=await r.json();
+    const r=await fetch('/api/state'); if(!r.ok) throw new Error('state get failed'); const s=await r.json();
     // Leader
     if (s.leader){
       $('L_anim').value=String(s.leader.animIndex); buildControlsFor('L');
@@ -534,10 +656,12 @@ async function loadState(){
     const gs=findVal(pids.speed); if (typeof gs==='number') setParamValueByPid('G_paramContainer', pids.speed, gs);
     const gmin=findVal(pids.min); if (typeof gmin==='number') setParamValueByPid('G_paramContainer', pids.min, gmin);
     const gmax=findVal(pids.max); if (typeof gmax==='number') setParamValueByPid('G_paramContainer', pids.max, gmax);
-  }catch(e){console.warn('state load failed',e);}
+    return true;
+  }catch(e){console.warn('state load failed',e); return false;}
 }
 
 async function init(){
+  const overlay=document.getElementById('loadingOverlay'); const hideOverlay=()=>{ if(overlay) overlay.style.display='none'; };
   await buildSchema();
   buildAnimSelect($('L_anim')); buildAnimSelect($('F_anim'));
   buildControlsFor('L'); buildControlsFor('F'); buildGlobals();
@@ -560,9 +684,12 @@ async function init(){
       const st=$('status'); st.textContent='applied'; setTimeout(()=>st.textContent='\u00a0',1600);
     } catch(err){ console.error(err); const st=$('status'); st.textContent='error'; st.style.background='#ef4444'; }
   });
-  loadState();
-  // Load favorites (enables buttons when done)
-  fetchFavorites();
+  // First-load: wait for state, favorites, and auto config
+  let stateOk=false, favOk=false, cfgOk=false;
+  try{ stateOk = await loadState(); }catch{ stateOk=false; }
+  try{ await fetchFavorites(); favOk=true; }catch{ favOk=false; }
+  try { const r = await fetch('/api/auto/config'); if (r.ok) { const data = await r.json(); if (data && data.on) { setMode('auto'); } cfgOk=true; } else { cfgOk=false; } } catch(_) { cfgOk=false; }
+  hideOverlay();
 }
 init();
   </script>

@@ -52,6 +52,18 @@ struct Node {
   Anim::ParamSet leaderParams; // defaults already set by struct definition
   Anim::ParamSet followerParams;
 
+  // --- Auto mode state ---
+  bool autoOn{false};
+  uint16_t autoIntervalSec{10};
+  bool autoRandom{false};
+  // IDs refer to favorites indices as stored
+  // We keep selections as a small fixed array for embedded safety
+  static const uint8_t kMaxAutoSel = 32;
+  uint8_t autoSel[kMaxAutoSel];
+  uint8_t autoSelCount{0};
+  int8_t autoIdx{-1}; // index into autoSel (-1 = not started)
+  uint32_t autoLastMs{0};
+
 #if defined(ARDUINO_ARCH_ESP32)
   // Web UI (leader only)
   WebServer *server{nullptr};
@@ -93,6 +105,24 @@ struct Node {
     // Initialize lastSaved with current defaults to avoid first-frame write
     lastSavedGMin = globalMin; lastSavedGMax = globalMax;
   }
+  // Load Auto config
+  autoOn = prefs.getBool("auto_on", false);
+  autoIntervalSec = prefs.getUShort("auto_iv", 60);
+  autoRandom = prefs.getBool("auto_rand", false);
+  autoSelCount = 0;
+  String selStr = prefs.getString("auto_sel", "");
+  int pos = 0;
+  while (pos < (int)selStr.length() && autoSelCount < kMaxAutoSel) {
+    int comma = selStr.indexOf(',', pos);
+    int end = (comma >= 0) ? comma : selStr.length();
+    int val = selStr.substring(pos, end).toInt();
+    if (val >= 0 && val <= 255) {
+      autoSel[autoSelCount++] = (uint8_t)val;
+    }
+    if (comma < 0) break; pos = comma + 1;
+  }
+  autoIdx = prefs.getChar("auto_idx", -1);
+  autoLastMs = prefs.getULong("auto_last", 0);
   if (isLeader) {
     setupWiFiAndServer();
   }
@@ -224,7 +254,7 @@ struct Node {
           #ifdef ARDUINO
           Serial.print("SYNC: new frame "); Serial.println(currentFrame);
           #endif
-  comm->sendSync(now, currentFrame);
+          comm->sendSync(now, currentFrame);
           lastSyncSent = now;
           pendingAck = true;
           pendingAckFrame = currentFrame;
@@ -235,20 +265,22 @@ struct Node {
           #ifdef ARDUINO
           Serial.print("ACK timeout - resending SAME frame "); Serial.println(pendingAckFrame);
           #endif
-  comm->sendSync(now, pendingAckFrame);
+          comm->sendSync(now, pendingAckFrame);
           lastSyncSent = now;
         }
       }
+      // Auto mode advancement
+      tickAutoMode(now);
     }
     static float buf[Anim::TOTAL_LEDS];
     // Use synced time for followers
     uint32_t baseNow = isLeader ? now : (uint32_t)((int32_t)now + timeOffsetMs);
-  // Time in seconds (renderer applies globalSpeed from ParamSet internally)
-  float t = (baseNow / 1000.0f);
-  // Render using new schema ParamSet directly
-  const Anim::ParamSet &ps = isLeader ? leaderParams : followerParams;
-  uint8_t aidx = isLeader ? leaderAnimIndex : followerAnimIndex;
-  Anim::applyAnim(aidx, t, Anim::TOTAL_LEDS, ps, buf);
+    // Time in seconds (renderer applies globalSpeed from ParamSet internally)
+    float t = (baseNow / 1000.0f);
+    // Render using new schema ParamSet directly
+    const Anim::ParamSet &ps = isLeader ? leaderParams : followerParams;
+    uint8_t aidx = isLeader ? leaderAnimIndex : followerAnimIndex;
+    Anim::applyAnim(aidx, t, Anim::TOTAL_LEDS, ps, buf);
 
     // FPS and LED values printing every 500 ms
     framesSincePrint++;
@@ -337,6 +369,89 @@ struct Node {
     comm->sendAnimCfg2(role, animIndex, ids, vals, count, nullptr, nullptr, 0);
   }
 
+  void applyFavoriteToBoth(uint8_t favId){
+    // Load favorite JSON from prefs and apply via cfg2-like path to both leader and follower
+    String key = String("fav_") + String(favId);
+    String cfg = prefs.getString(key.c_str(), "");
+    if (cfg.length()==0) return;
+    // Parse animIndex for leader and follower and param arrays; use a simple pattern-based parser
+    auto findNum=[&](const String &s, const char* key, float defv)->float{
+      int idx = s.indexOf(key); if (idx<0) return defv; idx = s.indexOf(':', idx); if (idx<0) return defv; idx++; while (idx<(int)s.length() && s[idx]==' ') idx++; int end=idx; while (end<(int)s.length() && ( (s[end]>='0'&&s[end]<='9') || s[end]=='-' || s[end]=='+' || s[end]=='.')) end++; return s.substring(idx,end).toFloat(); };
+    uint8_t L_anim = (uint8_t)findNum(cfg, "\"leader\"\s*:\s*\{[\\s\\S]*?\"animIndex\"", leaderAnimIndex); // fallback approach below
+    // Fallback simple: find first "leader" then its animIndex
+    int lPos = cfg.indexOf("\"leader\"");
+    if (lPos>=0){ int aPos = cfg.indexOf("\"animIndex\"", lPos); if (aPos>=0){ int c = cfg.indexOf(':', aPos); if (c>=0){ int st=c+1; while (st<(int)cfg.length() && cfg[st]==' ') st++; int en=st; while (en<(int)cfg.length() && isdigit(cfg[en])) en++; L_anim = (uint8_t)cfg.substring(st,en).toInt(); } } }
+    int fPos = cfg.indexOf("\"follower\""); uint8_t F_anim = followerAnimIndex; if (fPos>=0){ int aPos = cfg.indexOf("\"animIndex\"", fPos); if (aPos>=0){ int c = cfg.indexOf(':', aPos); if (c>=0){ int st=c+1; while (st<(int)cfg.length() && cfg[st]==' ') st++; int en=st; while (en<(int)cfg.length() && isdigit(cfg[en])) en++; F_anim = (uint8_t)cfg.substring(st,en).toInt(); } } }
+    // Reset param sets then fill by scanning all id/value pairs inside leader and follower blocks separately
+    auto fillParams = [&](const char* blockName, Anim::ParamSet &ps){
+      int bpos = cfg.indexOf(blockName); if (bpos<0) return; int brace = cfg.indexOf('{', bpos); if (brace<0) return; int endBlock = cfg.indexOf('}', brace); if (endBlock<0) endBlock = cfg.length();
+      int pos=brace; int safety=0; while (pos<endBlock && safety<128){
+        int idKey = cfg.indexOf("\"id\"", pos); if (idKey<0 || idKey>=endBlock) break; int colon = cfg.indexOf(':', idKey); if (colon<0) break; int idStart=colon+1; while (idStart<endBlock && cfg[idStart]==' ') idStart++; int idEnd=idStart; while (idEnd<endBlock && isdigit(cfg[idEnd])) idEnd++; uint8_t pid=(uint8_t)cfg.substring(idStart,idEnd).toInt();
+        int vKey = cfg.indexOf("\"value\"", idEnd); if (vKey<0 || vKey>=endBlock) { pos = idEnd; safety++; continue; } colon = cfg.indexOf(':', vKey); if (colon<0) break; int vStart=colon+1; while (vStart<endBlock && cfg[vStart]==' ') vStart++; int vEnd=vStart; while (vEnd<endBlock && ( (cfg[vEnd]>='0'&&cfg[vEnd]<='9') || cfg[vEnd]=='-' || cfg[vEnd]=='+' || cfg[vEnd]=='.')) vEnd++; float v = cfg.substring(vStart,vEnd).toFloat();
+        Anim::setParamField(ps, pid, v);
+        pos = vEnd; safety++;
+      }
+    };
+    fillParams("\"leader\"", leaderParams);
+    fillParams("\"follower\"", followerParams);
+
+    // Parse optional globals and apply to BOTH param sets
+    auto findNumInRange = [&](int start, int end, const char* key, bool &found, float &out){
+      found = false; out = 0.0f; if (start<0 || end<=start) return; int k = cfg.indexOf(key, start); if (k<0 || k>=end) return; int c = cfg.indexOf(':', k); if (c<0 || c>=end) return; int st=c+1; while (st<end && cfg[st]==' ') st++; int en=st; while (en<end && ((cfg[en]>='0'&&cfg[en]<='9') || cfg[en]=='-' || cfg[en]=='+' || cfg[en]=='.')) en++; out = cfg.substring(st,en).toFloat(); found = true; };
+    int gpos = cfg.indexOf("\"globals\"");
+    if (gpos>=0){
+      int gl = cfg.indexOf('{', gpos);
+      int gr = cfg.indexOf('}', gl);
+      if (gl>=0 && gr>gl){
+        bool hs=false, hmin=false, hmax=false; float vs=0, vmin=0, vmax=0;
+        findNumInRange(gl, gr, "\"globalSpeed\"", hs, vs);
+        findNumInRange(gl, gr, "\"globalMin\"", hmin, vmin);
+        findNumInRange(gl, gr, "\"globalMax\"", hmax, vmax);
+        if (hs){ Anim::setParamField(leaderParams, AnimSchema::PID_GLOBAL_SPEED, vs); Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_SPEED, vs); }
+        if (hmin){ Anim::setParamField(leaderParams, AnimSchema::PID_GLOBAL_MIN, vmin); Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MIN, vmin); }
+        if (hmax){ Anim::setParamField(leaderParams, AnimSchema::PID_GLOBAL_MAX, vmax); Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MAX, vmax); }
+      }
+    }
+
+    leaderAnimIndex = L_anim; followerAnimIndex = F_anim;
+    // Update globals mirrors from leader params
+    globalSpeed = leaderParams.globalSpeed; globalMin = leaderParams.globalMin; globalMax = leaderParams.globalMax;
+#if defined(ARDUINO_ARCH_ESP32)
+    // Persist global min/max if changed significantly
+    auto fabsf_local = [](float x){ return x < 0 ? -x : x; };
+    if (fabsf_local(globalMin - lastSavedGMin) > 0.001f || fabsf_local(globalMax - lastSavedGMax) > 0.001f) {
+      prefs.putFloat("gmin", globalMin);
+      prefs.putFloat("gmax", globalMax);
+      lastSavedGMin = globalMin; lastSavedGMax = globalMax;
+    }
+#endif
+    // Send follower full param set
+    sendAllParams(1, followerAnimIndex, followerParams);
+  }
+
+  void tickAutoMode(uint32_t nowMs){
+    if (!autoOn) return;
+    if (autoSelCount == 0) { autoOn = false; return; }
+    if (autoIdx < 0 || (nowMs - autoLastMs) >= (uint32_t)autoIntervalSec*1000u){
+      // advance index
+      if (autoRandom){
+        // simple random choice different from previous when possible
+        uint8_t newi = (uint8_t)random(0, autoSelCount);
+        if (autoSelCount > 1 && autoIdx>=0 && newi == (uint8_t)autoIdx){ newi = (newi + 1) % autoSelCount; }
+        autoIdx = (int8_t)newi;
+      } else {
+        autoIdx = (autoIdx < 0) ? 0 : ((autoIdx + 1) % autoSelCount);
+      }
+      autoLastMs = nowMs;
+      // Apply selected favorite to both
+      uint8_t favId = autoSel[(uint8_t)autoIdx];
+      applyFavoriteToBoth(favId);
+      // Persist progress
+      prefs.putChar("auto_idx", autoIdx);
+      prefs.putULong("auto_last", autoLastMs);
+    }
+  }
+
   // --- Favorites (leader only) ---
   String extractNameFromJson(const String &js){
     int idx = js.indexOf("\"name\"");
@@ -401,6 +516,25 @@ struct Node {
     prefs.putString(lastKey.c_str(), "");
     #endif
     prefs.putUChar("fav_count", (uint8_t)(count-1));
+    // Remap auto selections: drop deleted id and decrement higher ones
+    if (autoSelCount>0){
+      uint8_t out[kMaxAutoSel]; uint8_t outCount=0;
+      for (uint8_t i=0;i<autoSelCount;i++){
+        uint8_t v = autoSel[i];
+        if (v == id) continue; // drop
+        if (v > id) v = v - 1; // shift
+        if (outCount < kMaxAutoSel) out[outCount++] = v;
+      }
+      for (uint8_t i=0;i<outCount;i++) autoSel[i]=out[i];
+      autoSelCount = outCount;
+      // Clamp autoIdx
+      if (autoSelCount==0){ autoOn=false; autoIdx=-1; }
+      else if (autoIdx >= (int8_t)autoSelCount) autoIdx = autoSelCount-1;
+      // Persist updated selections
+      String s=""; for(uint8_t i=0;i<autoSelCount;i++){ if(i) s+=","; s+=String(autoSel[i]); }
+      prefs.putString("auto_sel", s);
+      prefs.putChar("auto_idx", autoIdx);
+    }
     server->send(200, "application/json", "{\"ok\":true}");
   }
 
@@ -421,24 +555,129 @@ struct Node {
   server->on("/api/favorites", HTTP_GET, [this]() { serveFavorites(); });
   server->on("/api/favorites/add", HTTP_POST, [this]() { handleFavAdd(); });
   server->on("/api/favorites/delete", HTTP_POST, [this]() { handleFavDelete(); });
+  // Auto endpoints
+  server->on("/api/auto/config", HTTP_GET, [this]() { serveAutoConfig(); });
+  server->on("/api/auto/settings", HTTP_POST, [this]() { handleAutoSettings(); });
+  server->on("/api/auto/start", HTTP_POST, [this]() { handleAutoStart(); });
+  server->on("/api/auto/stop", HTTP_POST, [this]() { handleAutoStop(); });
     server->begin();
   }
 
-void serveIndex() {
+ void serveIndex() {
   String fullHtml;
   fullHtml.reserve(4096); // Pre-allocate to avoid reallocs
   fullHtml += FPSTR(INDEX_HTML_PREFIX);
   fullHtml += FPSTR(ANIM_SCHEMA_JSON);
   fullHtml += FPSTR(INDEX_HTML_SUFFIX);
   server->send(200, "text/html; charset=utf-8", fullHtml);
-}
+ }
+
+  // --- Auto endpoints ---
+  void serveAutoConfig(){
+    // derive current favorite name if any
+    String curName = ""; int curId = -1; uint32_t remaining=0;
+    #ifdef ARDUINO
+    uint32_t now = millis();
+    #else
+    uint32_t now = 0;
+    #endif
+    if (autoOn && autoSelCount>0 && autoIdx>=0 && autoIdx < (int8_t)autoSelCount){
+      curId = autoSel[(uint8_t)autoIdx];
+      String key = String("fav_") + String(curId);
+      String cfg = prefs.getString(key.c_str(), "");
+      curName = extractNameFromJson(cfg);
+      if (now >= autoLastMs) {
+        uint32_t elapsed = now - autoLastMs;
+        uint32_t dur = (uint32_t)autoIntervalSec * 1000u;
+        if (elapsed < dur) remaining = (dur - elapsed)/1000u; else remaining = 0;
+      }
+    }
+    // selections as JSON array
+    String selJson="["; for(uint8_t i=0;i<autoSelCount;i++){ if(i) selJson += ","; selJson += String(autoSel[i]); } selJson += "]";
+    String j = "{";
+    j += "\"on\":" + String(autoOn?"true":"false") + ",";
+    j += "\"interval\":" + String((int)(autoIntervalSec/60)) + ",";
+    j += "\"random\":" + String(autoRandom?"true":"false") + ",";
+    j += "\"selections\":" + selJson + ",";
+    j += "\"current\":{\"name\":\"" + curName + "\",\"id\":" + String(curId) + ",\"remaining\":" + String((int)remaining) + "}";
+    j += "}";
+    server->send(200, "application/json", j);
+  }
+
+  void handleAutoSettings(){
+    String body = server->arg("plain");
+    // parse interval
+    auto extractNum=[&](const char *key, int defv)->int{
+      int idx = body.indexOf(key); if (idx<0) return defv; idx = body.indexOf(':', idx); if (idx<0) return defv; idx++; while (idx<(int)body.length() && body[idx]==' ') idx++; int end=idx; while (end<(int)body.length() && isdigit(body[end])) end++; return body.substring(idx,end).toInt(); };
+    auto extractBool=[&](const char *key, bool defv)->bool{
+      int idx = body.indexOf(key); if (idx<0) return defv; idx = body.indexOf(':', idx); if (idx<0) return defv; idx++; while (idx<(int)body.length() && (body[idx]==' ')) idx++; if (body.startsWith("true", idx)) return true; if (body.startsWith("false", idx)) return false; return defv; };
+    // Treat incoming interval as minutes, store seconds
+    {
+      int ivMin = extractNum("\"interval\"", autoIntervalSec/60);
+      if (ivMin < 1) ivMin = 1;
+      autoIntervalSec = (uint16_t)(ivMin * 60);
+    }
+    autoRandom = extractBool("\"random\"", autoRandom);
+    // parse selections array
+    autoSelCount = 0;
+    int sidx = body.indexOf("\"selections\"");
+    if (sidx>=0){ int lb = body.indexOf('[', sidx); int rb = body.indexOf(']', lb); if (lb>=0 && rb>lb){ int pos=lb+1; while (pos<rb && autoSelCount<kMaxAutoSel){ while (pos<rb && (body[pos]==' '||body[pos]==',')) pos++; int start=pos; while (pos<rb && isdigit(body[pos])) pos++; if (pos>start){ int v = body.substring(start,pos).toInt(); if (v>=0 && v<=255) autoSel[autoSelCount++] = (uint8_t)v; } while (pos<rb && body[pos]!=',' ) pos++; } } }
+    // persist
+    prefs.putUShort("auto_iv", autoIntervalSec);
+    prefs.putBool("auto_rand", autoRandom);
+    String s=""; for(uint8_t i=0;i<autoSelCount;i++){ if(i) s+=","; s+=String(autoSel[i]); }
+    prefs.putString("auto_sel", s);
+    server->send(200, "application/json", "{\"ok\":true}");
+  }
+
+  void handleAutoStart(){
+    if (autoSelCount==0){ server->send(400, "application/json", "{\"ok\":false,\"error\":\"no selections\"}"); return; }
+    autoOn = true;
+    // start from first or keep current
+    if (autoIdx < 0 || autoIdx >= (int8_t)autoSelCount) autoIdx = 0;
+    // Force apply immediately so UI shows current
+    #ifdef ARDUINO
+    uint32_t now = millis();
+    #else
+    uint32_t now = 0;
+    #endif
+    autoLastMs = now;
+    applyFavoriteToBoth(autoSel[(uint8_t)autoIdx]);
+    prefs.putBool("auto_on", true);
+    prefs.putChar("auto_idx", autoIdx);
+    prefs.putULong("auto_last", autoLastMs);
+    server->send(200, "application/json", "{\"ok\":true}");
+  }
+
+  void handleAutoStop(){
+    autoOn = false;
+    prefs.putBool("auto_on", false);
+    server->send(200, "application/json", "{\"ok\":true}");
+  }
+
 
 
   void serveState() {  
     String j = "{";
+    // Auto flags for UI convenience
+    #ifdef ARDUINO
+    uint32_t now = millis();
+    #else
+    uint32_t now = 0;
+    #endif
+    uint32_t remaining=0;
+    if (autoOn && autoSelCount>0 && autoIdx>=0){
+      if (now >= autoLastMs){
+        uint32_t elapsed = now - autoLastMs;
+        uint32_t dur = (uint32_t)autoIntervalSec * 1000u;
+        if (elapsed < dur) remaining = (dur - elapsed)/1000u; else remaining = 0;
+      }
+    }
+    j += "\"autoOn\":" + String(autoOn?"true":"false") + ",";
+    j += "\"autoRemaining\":" + String((int)remaining) + ",";
     // Leader: dynamic only
     j += "\"leader\":{";
-  j += "\"animIndex\":" + String(leaderAnimIndex) + ",";
+    j += "\"animIndex\":" + String(leaderAnimIndex) + ",";
     j += "\"params\":[";
     for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
       AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
@@ -450,7 +689,7 @@ void serveIndex() {
     j += "]},";
     // Follower: dynamic only
     j += "\"follower\":{";
-  j += "\"animIndex\":" + String(followerAnimIndex) + ",";
+    j += "\"animIndex\":" + String(followerAnimIndex) + ",";
     j += "\"params\":[";
     for (size_t i=0;i<sizeof(AnimSchema::PARAMS)/sizeof(AnimSchema::PARAMS[0]); ++i){
       AnimSchema::ParamDef pd; memcpy_P(&pd, &AnimSchema::PARAMS[i], sizeof(pd));
@@ -524,6 +763,13 @@ void serveIndex() {
       }
 #endif
     }
+    if (autoOn) {
+      autoOn = false;
+      prefs.putBool("auto_on", false);
+      #ifdef ARDUINO
+      Serial.println("Auto stopped due to manual cfg2");
+      #endif
+    }
     server->send(200, "application/json", "{\"ok\":true}");
   }
 
@@ -570,6 +816,13 @@ void serveIndex() {
   }
 #endif
 
+    if (autoOn) {
+      autoOn = false;
+      prefs.putBool("auto_on", false);
+      #ifdef ARDUINO
+      Serial.println("Auto stopped due to legacy apply");
+      #endif
+    }
     server->send(200, "text/plain", "applied");
   }
 #endif
