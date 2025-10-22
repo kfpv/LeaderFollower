@@ -130,39 +130,42 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
       <button class="hamburger" aria-label="menu" aria-expanded="false">☰</button>
     </div>
   </header>
-   <div class="container">
-    <div id="favModal" class="modal" hidden>
-      <div class="modal-panel">
-        <div class="modal-header"><div class="pill">Favorites</div><button id="favClose" class="navlink">Close</button></div>
-        <div id="favList" class="fav-list"></div>
-      </div>
-    </div>
-    <div class="card" id="globalsCard">
-      <div class="pill">Globals</div>
-      <div id="G_paramContainer"></div>
-    </div>
-     <div class="tabs">
+    <div class="container">
+     <div id="favModal" class="modal" hidden>
+       <div class="modal-panel">
+         <div class="modal-header"><div class="pill">Favorites</div><button id="favClose" class="navlink">Close</button></div>
+         <div id="favList" class="fav-list"></div>
+       </div>
+     </div>
+     <div class="card" id="globalsCard">
+       <div class="pill">Globals</div>
+       <div id="G_paramContainer"></div>
+       <div class="actions" id="autoGlobalsActions" style="display:none;margin-top:8px">
+         <button class="btn" id="applyGlobals">Write Settings</button>
+       </div>
+     </div>
+      <div class="tabs">
        <button class="tab active" data-target="leaderCard">Leader</button>
        <button class="tab" data-target="followerCard">Follower</button>
-     </div>
-      <div class="card mode-auto" id="autoCard" hidden style="grid-column:1 / -1">
-        <div class="pill">Auto</div>
-        <div class="row"><label>Interval (min)</label><input id="autoInterval" type="number" min="1" step="1" value="1"/><span></span></div>
-        <div class="row"><label>Randomize</label><div class="switch"><input id="autoRandomize" type="checkbox"/><span>shuffle</span></div><span></span></div>
-        <div class="autoFavSection" style="display:flex;flex-direction:column;gap:8px;margin:10px 0">
-          <div class="pill">Favorites</div>
-          <label style="display:flex;align-items:center;gap:8px">
-            <input id="autoSelAll" type="checkbox"/> Select All
-          </label>
-          <div id="autoFavList" class="fav-list"></div>
-        </div>
-        <div class="actions">
-          <button class="btn" id="autoStart">Start</button>
-          <button class="navlink" id="autoStop">Stop</button>
-          <span id="autoStatus" class="pill">&nbsp;</span>
-        </div>
       </div>
-     <div class="twocol">
+       <div class="card mode-auto" id="autoCard" hidden style="grid-column:1 / -1">
+         <div class="pill">Auto</div>
+         <div class="row"><label>Interval (min)</label><input id="autoInterval" type="number" min="1" step="1" value="1"/><span></span></div>
+         <div class="row"><label>Randomize</label><div class="switch"><input id="autoRandomize" type="checkbox"/><span>shuffle</span></div><span></span></div>
+         <div class="autoFavSection" style="display:flex;flex-direction:column;gap:8px;margin:10px 0">
+           <div class="pill">Favorites</div>
+           <label style="display:flex;align-items:center;gap:8px">
+             <input id="autoSelAll" type="checkbox"/> Select All
+           </label>
+           <div id="autoFavList" class="fav-list"></div>
+         </div>
+         <div class="actions">
+           <button class="btn" id="autoStart">Start</button>
+           <button class="navlink" id="autoStop">Stop</button>
+           <span id="autoStatus" class="pill">&nbsp;</span>
+         </div>
+       </div>
+      <div class="twocol">
        <div class="card active" id="leaderCard">
          <div class="pill">Leader</div>
          <div class="mode-normal">
@@ -183,9 +186,9 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
            <div class="led-grid" id="F_ledGrid"></div>
          </div>
        </div>
-     </div>
-      <div class="actions"><button class="btn" id="apply">Write Settings</button><span id="autoBanner" class="pill" style="display:none">&nbsp;</span><span id="status" class="pill">&nbsp;</span></div>
-   </div>
+      </div>
+       <div class="actions"><button class="btn" id="apply">Write Settings</button><span id="autoBanner" class="pill" style="display:none">&nbsp;</span><span id="status" class="pill">&nbsp;</span></div>
+    </div>
    <script>
  // Schema generated dynamically from anim_schema.h using X-macros
 const SCHEMA_JSON = ')HTML";
@@ -278,6 +281,7 @@ const hamburger=document.querySelector('.hamburger');
   const favOpen=document.getElementById('btnFavOpen'); if(favOpen){ favOpen.style.display=''; }
   // Hide Write Settings button in Auto mode
   const applyBtn=document.getElementById('apply'); if(applyBtn){ applyBtn.style.display = (mode==='auto') ? 'none' : ''; }
+  const ag=document.getElementById('autoGlobalsActions'); if(ag){ ag.style.display = (mode==='auto') ? '' : 'none'; }
   // When entering auto mode, refresh config/status
   if (mode==='auto') {
     stopAutoBannerPolling();
@@ -771,6 +775,18 @@ async function init(){
     } catch(err){ console.error(err); setStatus('error','error'); }
     finally { if(btn) btn.disabled=false; }
   });
+  // Wire globals-only apply (does not stop Auto)
+  const btnG=$('applyGlobals'); if(btnG){ btnG.addEventListener('click', async ()=>{
+    const b=btnG; b.disabled=true; setStatus('saving…','saving');
+    try{
+      const g=gatherGlobals();
+      await http('/api/globals', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(g) });
+      setStatus('saved','saved');
+      // silently refresh to reflect any clamping
+      try{ await loadState(); }catch(_){ }
+    }catch(e){ console.error('applyGlobals failed', e); setStatus('error','error'); }
+    finally{ b.disabled=false; }
+  }); }
   // First-load: wait for state, favorites, and auto config
   let stateOk=false, favOk=false, cfgOk=false;
   try{ stateOk = await loadState(); }catch{ stateOk=false; }

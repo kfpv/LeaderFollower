@@ -95,8 +95,28 @@ static void applyFavoriteSim(int favId){
     };
     parseBlock("\"leader\"", gLeaderAnimIndex, gLeaderParams);
     parseBlock("\"follower\"", gFollowerAnimIndex, gFollowerParams);
-    // Optional globals
-    size_t gpos = cfg.find("\"globals\""); if (gpos!=std::string::npos){ size_t gl = cfg.find('{', gpos); size_t gr = cfg.find('}', gl==std::string::npos?0:gl); if (gl!=std::string::npos && gr!=std::string::npos && gr>gl){ double gs = findNum(cfg, gl, gr, "\"globalSpeed\"", 1.0); double gmin = findNum(cfg, gl, gr, "\"globalMin\"", 0.0); double gmax = findNum(cfg, gl, gr, "\"globalMax\"", 1.0); gLeaderParams[(int)AnimSchema::PID_GLOBAL_SPEED]=(float)gs; gFollowerParams[(int)AnimSchema::PID_GLOBAL_SPEED]=(float)gs; gLeaderParams[(int)AnimSchema::PID_GLOBAL_MIN]=(float)gmin; gFollowerParams[(int)AnimSchema::PID_GLOBAL_MIN]=(float)gmin; gLeaderParams[(int)AnimSchema::PID_GLOBAL_MAX]=(float)gmax; gFollowerParams[(int)AnimSchema::PID_GLOBAL_MAX]=(float)gmax; } }
+    // Optional globals: only override keys that are explicitly present
+    size_t gpos = cfg.find("\"globals\"");
+    if (gpos != std::string::npos) {
+        size_t gl = cfg.find('{', gpos);
+        size_t gr = cfg.find('}', gl==std::string::npos?0:gl);
+        if (gl!=std::string::npos && gr!=std::string::npos && gr>gl){
+            auto hasKeyIn = [&](const char* key){ size_t k = cfg.find(key, gl); return (k!=std::string::npos && k<gr); };
+            if (hasKeyIn("\"globalSpeed\"")){
+                double gs = findNum(cfg, gl, gr, "\"globalSpeed\"", 1.0);
+                gLeaderParams[(int)AnimSchema::PID_GLOBAL_SPEED]=(float)gs;
+                gFollowerParams[(int)AnimSchema::PID_GLOBAL_SPEED]=(float)gs;
+            }
+            // Intentionally ignore globalMin/globalMax from favorites to match firmware
+            // Enforce max >= min using existing values
+            float lmin = gLeaderParams[(int)AnimSchema::PID_GLOBAL_MIN];
+            float lmax = gLeaderParams[(int)AnimSchema::PID_GLOBAL_MAX];
+            if (lmax < lmin) gLeaderParams[(int)AnimSchema::PID_GLOBAL_MAX] = lmin;
+            float fmin = gFollowerParams[(int)AnimSchema::PID_GLOBAL_MIN];
+            float fmax = gFollowerParams[(int)AnimSchema::PID_GLOBAL_MAX];
+            if (fmax < fmin) gFollowerParams[(int)AnimSchema::PID_GLOBAL_MAX] = fmin;
+        }
+    }
 }
 
 static void advanceAutoIfNeeded(){
@@ -351,6 +371,37 @@ private:
             }
             applyCfg2FromBody(body);
             sendResponse(fd, 200, "application/json", "{\"ok\":true}");
+        } else if(path=="/api/globals" && method=="POST"){
+            // Apply only global params to both roles; do not stop Auto
+            initDefaultParams();
+            auto lb = body.find('[');
+            auto rb = body.rfind(']');
+            if (lb != std::string::npos && rb != std::string::npos && rb > lb){
+                size_t pos = lb + 1; int safety = 0;
+                while (pos < rb && safety < 1024){
+                    auto idk = body.find("\"id\"", pos); if (idk==std::string::npos || idk>=rb) break;
+                    auto col = body.find(':', idk); if (col==std::string::npos || col>=rb) break; size_t is = col+1; while (is<rb && body[is]==' ') is++;
+                    size_t ie=is; while (ie<rb && std::isdigit((unsigned char)body[ie])) ie++;
+                    int pid = 0; try{ pid = std::stoi(body.substr(is, ie-is)); }catch(...){ pid=0; }
+                    auto vk = body.find("\"value\"", ie); if (vk==std::string::npos || vk>=rb){ pos = ie; safety++; continue; }
+                    col = body.find(':', vk); if (col==std::string::npos || col>=rb) break; size_t vs = col+1; while (vs<rb && body[vs]==' ') vs++;
+                    size_t ve=vs; while (ve<rb && (std::isdigit((unsigned char)body[ve])||body[ve]=='-'||body[ve]=='+'||body[ve]=='.'||body[ve]=='e'||body[ve]=='E')) ve++;
+                    float val = 0.0f; try{ val = std::stof(body.substr(vs, ve-vs)); }catch(...){ val=0.0f; }
+                    if (pid== (int)AnimSchema::PID_GLOBAL_SPEED || pid==(int)AnimSchema::PID_GLOBAL_MIN || pid==(int)AnimSchema::PID_GLOBAL_MAX){
+                        gLeaderParams[pid]=val;
+                        gFollowerParams[pid]=val;
+                    }
+                    pos = ve; safety++;
+                }
+                // Enforce max >= min on both
+                float lmin = gLeaderParams[(int)AnimSchema::PID_GLOBAL_MIN];
+                float lmax = gLeaderParams[(int)AnimSchema::PID_GLOBAL_MAX];
+                if (lmax < lmin) gLeaderParams[(int)AnimSchema::PID_GLOBAL_MAX] = lmin;
+                float fmin = gFollowerParams[(int)AnimSchema::PID_GLOBAL_MIN];
+                float fmax = gFollowerParams[(int)AnimSchema::PID_GLOBAL_MAX];
+                if (fmax < fmin) gFollowerParams[(int)AnimSchema::PID_GLOBAL_MAX] = fmin;
+            }
+            sendResponse(fd, 200, "application/json", "{\"ok\":true}");
         } else if(path=="/api/favorites" && method=="GET"){
             std::this_thread::sleep_for(std::chrono::seconds(1)); // simulate delay
             std::string json = buildFavoritesJson();
@@ -360,7 +411,7 @@ private:
             std::ostringstream oss; oss << "{\"ok\":true,\"id\":" << (gFavorites.size()? gFavorites.size()-1 : 0) << "}";
             sendResponse(fd, 200, "application/json", oss.str());
         } else if(path=="/api/favorites/delete" && method=="POST"){
-            // Parse {"id":n} from body
+            // Parse {\"id\":n} from body
             int id = -1;
             if (!body.empty()){
                 auto pos = body.find("\"id\"");

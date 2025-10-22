@@ -382,7 +382,7 @@ struct Node {
     int lPos = cfg.indexOf("\"leader\"");
     if (lPos>=0){ int aPos = cfg.indexOf("\"animIndex\"", lPos); if (aPos>=0){ int c = cfg.indexOf(':', aPos); if (c>=0){ int st=c+1; while (st<(int)cfg.length() && cfg[st]==' ') st++; int en=st; while (en<(int)cfg.length() && isdigit(cfg[en])) en++; L_anim = (uint8_t)cfg.substring(st,en).toInt(); } } }
     int fPos = cfg.indexOf("\"follower\""); uint8_t F_anim = followerAnimIndex; if (fPos>=0){ int aPos = cfg.indexOf("\"animIndex\"", fPos); if (aPos>=0){ int c = cfg.indexOf(':', aPos); if (c>=0){ int st=c+1; while (st<(int)cfg.length() && cfg[st]==' ') st++; int en=st; while (en<(int)cfg.length() && isdigit(cfg[en])) en++; F_anim = (uint8_t)cfg.substring(st,en).toInt(); } } }
-    // Reset param sets then fill by scanning all id/value pairs inside leader and follower blocks separately
+    // Fill by scanning all id/value pairs inside leader and follower blocks separately
     auto fillParams = [&](const char* blockName, Anim::ParamSet &ps){
       int bpos = cfg.indexOf(blockName); if (bpos<0) return; int brace = cfg.indexOf('{', bpos); if (brace<0) return; int endBlock = cfg.indexOf('}', brace); if (endBlock<0) endBlock = cfg.length();
       int pos=brace; int safety=0; while (pos<endBlock && safety<128){
@@ -395,7 +395,7 @@ struct Node {
     fillParams("\"leader\"", leaderParams);
     fillParams("\"follower\"", followerParams);
 
-    // Parse optional globals and apply to BOTH param sets
+    // Parse optional globals and apply ONLY globalSpeed (min/max intentionally ignored)
     auto findNumInRange = [&](int start, int end, const char* key, bool &found, float &out){
       found = false; out = 0.0f; if (start<0 || end<=start) return; int k = cfg.indexOf(key, start); if (k<0 || k>=end) return; int c = cfg.indexOf(':', k); if (c<0 || c>=end) return; int st=c+1; while (st<end && cfg[st]==' ') st++; int en=st; while (en<end && ((cfg[en]>='0'&&cfg[en]<='9') || cfg[en]=='-' || cfg[en]=='+' || cfg[en]=='.')) en++; out = cfg.substring(st,en).toFloat(); found = true; };
     int gpos = cfg.indexOf("\"globals\"");
@@ -403,13 +403,10 @@ struct Node {
       int gl = cfg.indexOf('{', gpos);
       int gr = cfg.indexOf('}', gl);
       if (gl>=0 && gr>gl){
-        bool hs=false, hmin=false, hmax=false; float vs=0, vmin=0, vmax=0;
+        bool hs=false; float vs=0;
         findNumInRange(gl, gr, "\"globalSpeed\"", hs, vs);
-        findNumInRange(gl, gr, "\"globalMin\"", hmin, vmin);
-        findNumInRange(gl, gr, "\"globalMax\"", hmax, vmax);
         if (hs){ Anim::setParamField(leaderParams, AnimSchema::PID_GLOBAL_SPEED, vs); Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_SPEED, vs); }
-        if (hmin){ Anim::setParamField(leaderParams, AnimSchema::PID_GLOBAL_MIN, vmin); Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MIN, vmin); }
-        if (hmax){ Anim::setParamField(leaderParams, AnimSchema::PID_GLOBAL_MAX, vmax); Anim::setParamField(followerParams, AnimSchema::PID_GLOBAL_MAX, vmax); }
+        // NOTE: we intentionally ignore globalMin/globalMax in favorites to avoid overriding user settings
       }
     }
 
@@ -560,6 +557,8 @@ struct Node {
   server->on("/api/auto/settings", HTTP_POST, [this]() { handleAutoSettings(); });
   server->on("/api/auto/start", HTTP_POST, [this]() { handleAutoStart(); });
   server->on("/api/auto/stop", HTTP_POST, [this]() { handleAutoStop(); });
+  // Globals-only update (does not stop Auto)
+  server->on("/api/globals", HTTP_POST, [this]() { handleGlobals(); });
     server->begin();
   }
 
@@ -770,6 +769,55 @@ struct Node {
       Serial.println("Auto stopped due to manual cfg2");
       #endif
     }
+    server->send(200, "application/json", "{\"ok\":true}");
+  }
+
+  void handleGlobals(){
+    String body = server->arg("plain");
+    // Parse all occurrences of id/value and apply only globalSpeed/globalMin/globalMax to BOTH roles
+    auto applyIfGlobal = [&](uint8_t pid, float v){
+      if (pid==AnimSchema::PID_GLOBAL_SPEED || pid==AnimSchema::PID_GLOBAL_MIN || pid==AnimSchema::PID_GLOBAL_MAX){
+        Anim::setParamField(leaderParams, pid, v);
+        Anim::setParamField(followerParams, pid, v);
+      }
+    };
+    int pos = 0; int safety = 0;
+    while (safety < 128) {
+      int idKey = body.indexOf("\"id\"", pos); if (idKey < 0) break;
+      int colon = body.indexOf(':', idKey); if (colon < 0) break; int idStart = colon + 1;
+      while (idStart < (int)body.length() && body[idStart]==' ') idStart++;
+      int idEnd = idStart; while (idEnd < (int)body.length() && isdigit(body[idEnd])) idEnd++;
+      uint8_t pid = (uint8_t)body.substring(idStart, idEnd).toInt();
+      int valKey = body.indexOf("\"value\"", idEnd); if (valKey < 0) { pos = idEnd; safety++; continue; }
+      colon = body.indexOf(':', valKey); if (colon < 0) break; int vStart = colon + 1;
+      while (vStart < (int)body.length() && body[vStart] == ' ') vStart++;
+      int vEnd = vStart; while (vEnd < (int)body.length() && ( (body[vEnd]>='0'&&body[vEnd]<='9') || body[vEnd]=='-' || body[vEnd]=='+' || body[vEnd]=='.')) vEnd++;
+      float v = body.substring(vStart, vEnd).toFloat();
+      applyIfGlobal(pid, v);
+      pos = vEnd; safety++;
+    }
+    // Ensure min/max are sane (max >= min) on both sets
+    if (leaderParams.globalMax < leaderParams.globalMin){
+      leaderParams.globalMax = leaderParams.globalMin;
+    }
+    if (followerParams.globalMax < followerParams.globalMin){
+      followerParams.globalMax = followerParams.globalMin;
+    }
+    // Update mirrors from leader params
+    globalSpeed = leaderParams.globalSpeed;
+    globalMin = leaderParams.globalMin;
+    globalMax = leaderParams.globalMax;
+#if defined(ARDUINO_ARCH_ESP32)
+    // Persist global min/max if changed significantly
+    auto fabsf_local = [](float x){ return x < 0 ? -x : x; };
+    if (fabsf_local(globalMin - lastSavedGMin) > 0.001f || fabsf_local(globalMax - lastSavedGMax) > 0.001f) {
+      prefs.putFloat("gmin", globalMin);
+      prefs.putFloat("gmax", globalMax);
+      lastSavedGMin = globalMin; lastSavedGMax = globalMax;
+    }
+#endif
+    // Send follower full param set to apply globals live; do NOT touch Auto state
+    sendAllParams(1, followerAnimIndex, followerParams);
     server->send(200, "application/json", "{\"ok\":true}");
   }
 
