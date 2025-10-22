@@ -632,8 +632,21 @@ struct Node {
   void handleAutoStart(){
     if (autoSelCount==0){ server->send(400, "application/json", "{\"ok\":false,\"error\":\"no selections\"}"); return; }
     autoOn = true;
-    // start from first or keep current
-    if (autoIdx < 0 || autoIdx >= (int8_t)autoSelCount) autoIdx = 0;
+    // Choose starting index: random with no immediate repeat when enabled
+    if (autoRandom) {
+      if (autoSelCount <= 1) {
+        autoIdx = 0;
+      } else {
+        uint8_t count = autoSelCount;
+        int8_t prev = autoIdx;
+        uint8_t newi = (uint8_t)random(0, count);
+        if (prev >= 0 && newi == (uint8_t)prev) newi = (uint8_t)((newi + 1) % count);
+        autoIdx = (int8_t)newi;
+      }
+    } else {
+      // start from first or keep current
+      if (autoIdx < 0 || autoIdx >= (int8_t)autoSelCount) autoIdx = 0;
+    }
     // Force apply immediately so UI shows current
     #ifdef ARDUINO
     uint32_t now = millis();

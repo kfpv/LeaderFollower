@@ -124,12 +124,20 @@ static void advanceAutoIfNeeded(){
     if (gAutoSel.empty()) { gAutoOn = false; return; }
     auto now = std::chrono::steady_clock::now();
     auto durSec = gAutoIntervalMin * 60;
-    if (gAutoIdx < 0) {
-        gAutoIdx = 0;
-        gAutoLastSwitch = now;
-        applyFavoriteSim(gAutoSel[gAutoIdx]);
-        return;
-    }
+        if (gAutoIdx < 0) {
+            if (gAutoRandom) {
+                seedRandOnce();
+                int count = (int)gAutoSel.size();
+                int newi = (count>0) ? (std::rand() % count) : 0;
+                gAutoIdx = newi;
+            } else {
+                gAutoIdx = 0;
+            }
+            gAutoLastSwitch = now;
+            applyFavoriteSim(gAutoSel[gAutoIdx]);
+            return;
+        }
+
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - gAutoLastSwitch).count();
     if (elapsed >= durSec) {
         if (gAutoRandom) {
@@ -472,7 +480,20 @@ private:
                 sendResponse(fd, 400, "application/json", "{\"ok\":false,\"error\":\"no selections\"}");
             } else {
                 gAutoOn = true;
-                if (gAutoIdx < 0 || gAutoIdx >= (int)gAutoSel.size()) gAutoIdx = 0;
+                if (gAutoRandom) {
+                    seedRandOnce();
+                    int count = (int)gAutoSel.size();
+                    if (count <= 1) {
+                        gAutoIdx = 0;
+                    } else {
+                        int prev = gAutoIdx;
+                        int newi = std::rand() % count;
+                        if (prev >= 0 && newi == prev) newi = (newi + 1) % count; // avoid immediate repeat
+                        gAutoIdx = newi;
+                    }
+                } else {
+                    if (gAutoIdx < 0 || gAutoIdx >= (int)gAutoSel.size()) gAutoIdx = 0;
+                }
                 gAutoLastSwitch = std::chrono::steady_clock::now();
                 applyFavoriteSim(gAutoSel[gAutoIdx]);
                 sendResponse(fd, 200, "application/json", "{\"ok\":true}");
