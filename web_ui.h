@@ -184,7 +184,7 @@ static const char INDEX_HTML_PREFIX[] PROGMEM = R"HTML(
          </div>
        </div>
      </div>
-     <div class="actions"><button class="btn" id="apply">Write Settings</button><span id="status" class="pill">&nbsp;</span></div>
+      <div class="actions"><button class="btn" id="apply">Write Settings</button><span id="autoBanner" class="pill" style="display:none">&nbsp;</span><span id="status" class="pill">&nbsp;</span></div>
    </div>
    <script>
  // Schema generated dynamically from anim_schema.h using X-macros
@@ -249,6 +249,18 @@ function setStatus(text, kind){
   }
 }
 
+// Central fetch helper with popup alerts on failure
+async function http(url, options, {silent=false}={}){
+  try{
+    const r = await fetch(url, options);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r;
+  }catch(e){
+    if(!silent){ alert('Request failed:\n'+url+"\n"+(e&&e.message?e.message:'Unknown error')); }
+    throw e;
+  }
+}
+
 // Navbar mode switching (only links with data-mode act as tabs)
 const modeLinks=[...document.querySelectorAll('.navlink[data-mode]')];
 const hamburger=document.querySelector('.hamburger');
@@ -268,9 +280,13 @@ const hamburger=document.querySelector('.hamburger');
   const applyBtn=document.getElementById('apply'); if(applyBtn){ applyBtn.style.display = (mode==='auto') ? 'none' : ''; }
   // When entering auto mode, refresh config/status
   if (mode==='auto') {
+    stopAutoBannerPolling();
     ensureFavoritesLoaded().then(()=>loadAutoConfig()).then(()=>startAutoStatusPolling()).catch(()=>{});
   } else {
     stopAutoStatusPolling();
+    startAutoBannerPolling();
+    // Refresh visible Normal tab to reflect current device state (Auto may have updated it)
+    loadState().catch(()=>{});
   }
   const nl=document.querySelector('.navlinks'); nl.classList.remove('open'); hamburger.setAttribute('aria-expanded','false');
  }
@@ -383,8 +399,7 @@ function gatherGlobals(){
 
 async function send(role, animIndex, params, globals){
   const body=JSON.stringify({role,animIndex,params,globals});
-  const r = await fetch('/api/cfg2',{method:'POST',headers:{'Content-Type':'application/json'},body});
-  if(!r.ok) throw new Error('cfg2 request failed: '+r.status);
+  await http('/api/cfg2',{method:'POST',headers:{'Content-Type':'application/json'},body});
 }
 
 // ----- Favorites -----
@@ -433,6 +448,7 @@ function renderFavList(){ const list=$('favList'); if(!list) return; list.innerH
 let AUTO_CFG={ on:false, interval:10, random:false, selections:[], current:{name:'',id:-1,remaining:0}};
 let AUTO_STATUS_TIMER=null;
 let AUTO_LOCAL_REMAIN=0;
+let AUTO_STATUS_FETCHING=false;
 
 function renderAutoFavList(){ const list=$('autoFavList'); if(!list) return; list.innerHTML='';
   if(!Array.isArray(FAVS)||FAVS.length===0){ const d=document.createElement('div'); d.className='fav-row'; d.textContent='No favorites saved yet'; list.appendChild(d); return; }
@@ -444,7 +460,9 @@ function renderAutoFavList(){ const list=$('autoFavList'); if(!list) return; lis
     subtitle.textContent = 'Leader: '+leaderName+'  •  Follower: '+followerName; left.appendChild(subtitle);
     const right=document.createElement('div'); right.style.display='flex'; right.style.alignItems='center'; right.style.gap='10px';
     const cb=document.createElement('input'); cb.type='checkbox'; cb.checked = AUTO_CFG.selections.includes(it.id);
-    cb.addEventListener('change', async ()=>{ const id=it.id; const idx=AUTO_CFG.selections.indexOf(id); if(cb.checked){ if(idx<0) AUTO_CFG.selections.push(id); } else { if(idx>=0) AUTO_CFG.selections.splice(idx,1); } updateSelectAllIndeterminate(); await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } });
+    cb.addEventListener('change', async ()=>{ const id=it.id; const idx=AUTO_CFG.selections.indexOf(id); if(cb.checked){ if(idx<0) AUTO_CFG.selections.push(id); } else { if(idx>=0) AUTO_CFG.selections.splice(idx,1); } updateSelectAllIndeterminate(); if (AUTO_CFG.on){ // do not persist mid-run; but keep countdown sane
+  updateAutoStatus(); }
+});
     right.appendChild(cb);
     row.appendChild(left); row.appendChild(right);
     // read-only: Details without load/delete
@@ -459,13 +477,12 @@ function updateSelectAllIndeterminate(){ const all=$('autoSelAll'); if(!all) ret
 
 function readAutoFormIntoCfg(){ const iv=$('autoInterval'); const rand=$('autoRandomize'); AUTO_CFG.interval = Math.max(1, parseInt(iv.value||'1',10)); AUTO_CFG.random = !!rand.checked; }
 
-async function loadAutoConfig(){ try{ const r=await fetch('/api/auto/config'); if(!r.ok) throw new Error('auto cfg get failed'); const data=await r.json();
+async function loadAutoConfig(){ try{ const r=await http('/api/auto/config'); const data=await r.json();
   AUTO_CFG.on=!!data.on; AUTO_CFG.interval = Math.max(1, parseInt(data.interval||'1',10)); AUTO_CFG.random=!!data.random; AUTO_CFG.selections = Array.isArray(data.selections)? data.selections.slice():[]; AUTO_CFG.current = data.current || {name:'',id:-1,remaining:0};
   AUTO_LOCAL_REMAIN = Math.max(0, parseInt(AUTO_CFG.current.remaining||0,10));
-  // Default to all favorites if none selected
+  // Default to all favorites if none selected (do not save until Start)
   if (AUTO_CFG.selections.length===0 && Array.isArray(FAVS) && FAVS.length>0){
     AUTO_CFG.selections = FAVS.map(it=>it.id);
-    await saveAutoSettings();
   }
   $('autoInterval').value=String(AUTO_CFG.interval); $('autoRandomize').checked=AUTO_CFG.random;
   renderAutoFavList(); updateAutoStatus();
@@ -473,54 +490,81 @@ async function loadAutoConfig(){ try{ const r=await fetch('/api/auto/config'); i
 }
 
 async function saveAutoSettings(){ readAutoFormIntoCfg(); const body=JSON.stringify({ interval:AUTO_CFG.interval, random:AUTO_CFG.random, selections:AUTO_CFG.selections });
-  try{ const r=await fetch('/api/auto/settings',{method:'POST',headers:{'Content-Type':'application/json'},body}); if(!r.ok) throw new Error('auto save failed'); } catch(e){ console.warn('saveAutoSettings failed', e); }
+  await http('/api/auto/settings',{method:'POST',headers:{'Content-Type':'application/json'},body});
 }
 
-async function startAuto(){ await saveAutoSettings(); try{ const r=await fetch('/api/auto/start',{method:'POST'}); if(!r.ok) throw new Error('auto start failed'); AUTO_CFG.on=true; startAutoStatusPolling(true); } catch(e){ console.warn('startAuto failed', e); } }
-async function stopAuto(){ try{ const r=await fetch('/api/auto/stop',{method:'POST'}); if(!r.ok) throw new Error('auto stop failed'); AUTO_CFG.on=false; updateAutoStatus(); stopAutoStatusPolling(); } catch(e){ console.warn('stopAuto failed', e); } }
+async function startAuto(){
+  const startBtn=$('autoStart'); if(startBtn) startBtn.disabled=true;
+  try{
+    // Save settings only now; start only if save succeeds
+    await saveAutoSettings();
+    await http('/api/auto/start',{method:'POST'});
+    // Fetch fresh server-side config to seed countdown/current
+    await loadAutoConfig();
+    AUTO_CFG.on=true; startAutoStatusPolling();
+  } catch(e){ console.warn('startAuto failed', e); /* alert shown by http() */ }
+  finally { if(startBtn) startBtn.disabled = (AUTO_CFG.selections.length===0); }
+}
+async function stopAuto(){ try{ await http('/api/auto/stop',{method:'POST'}); AUTO_CFG.on=false; updateAutoStatus(); stopAutoStatusPolling(); } catch(e){ console.warn('stopAuto failed', e); } }
 
 function updateAutoStatus(){ const pill=$('autoStatus'); if(!pill) return; const startBtn=$('autoStart'); if(startBtn){ const totalFavs = Array.isArray(FAVS)?FAVS.length:0; startBtn.disabled = (totalFavs===0 || AUTO_CFG.selections.length===0); }
   if(!AUTO_CFG.on){ pill.textContent='stopped'; pill.style.borderColor='var(--outline)'; pill.style.color='var(--muted)'; return; } const nm=AUTO_CFG.current&&AUTO_CFG.current.name?AUTO_CFG.current.name:''; const rem=(typeof AUTO_LOCAL_REMAIN==='number')?Math.max(0,Math.floor(AUTO_LOCAL_REMAIN)):0; pill.textContent = (nm? nm+' • ' : '') + rem + 's left'; pill.style.borderColor='var(--accent2)'; pill.style.color='var(--accent2)'; }
 
-async function localAutoTick(){ if(!AUTO_CFG.on){ updateAutoStatus(); return; } if (AUTO_LOCAL_REMAIN>0){ AUTO_LOCAL_REMAIN -= 1; updateAutoStatus(); return; } try{ await loadAutoConfig(); updateAutoStatus(); } catch(_){} }
+async function localAutoTick(){ if(!AUTO_CFG.on){ updateAutoStatus(); return; } if (AUTO_LOCAL_REMAIN>0){ AUTO_LOCAL_REMAIN -= 1; updateAutoStatus(); return; } if (AUTO_STATUS_FETCHING) { return; } try{ AUTO_STATUS_FETCHING=true; await loadAutoConfig(); updateAutoStatus(); } catch(_){} finally { AUTO_STATUS_FETCHING=false; } }
 
 function startAutoStatusPolling(){ stopAutoStatusPolling(); // seed remaining from current if present
   if (typeof AUTO_LOCAL_REMAIN !== 'number' || AUTO_LOCAL_REMAIN<=0){ AUTO_LOCAL_REMAIN = Math.max(0, parseInt(AUTO_CFG.current&&AUTO_CFG.current.remaining||0,10)); }
   updateAutoStatus(); AUTO_STATUS_TIMER = setInterval(localAutoTick, 1000); }
-function stopAutoStatusPolling(){ if (AUTO_STATUS_TIMER){ clearInterval(AUTO_STATUS_TIMER); AUTO_STATUS_TIMER=null; } }
+function stopAutoStatusPolling(){ if (AUTO_STATUS_TIMER){ clearInterval(AUTO_STATUS_TIMER); AUTO_STATUS_TIMER=null; } AUTO_STATUS_FETCHING=false; }
+
+// ----- Auto banner outside Auto mode -----
+let AUTO_BANNER_TIMER=null; let AUTO_BANNER_LOCAL_REMAIN=0; let AUTO_BANNER_ON=false; let AUTO_BANNER_NAME=''; let AUTO_BANNER_FETCHING=false; let AUTO_BANNER_OFF_TICKS=0;
+
+function updateAutoBanner(){ const pill=$('autoBanner'); if(!pill) return; if(!AUTO_BANNER_ON){ pill.style.display='none'; pill.textContent='\u00a0'; pill.style.borderColor='var(--outline)'; pill.style.color='var(--muted)'; return; } const rem=Math.max(0,Math.floor(AUTO_BANNER_LOCAL_REMAIN||0)); pill.style.display='inline-block'; pill.style.borderColor='var(--accent2)'; pill.style.color='var(--accent2)'; const name=AUTO_BANNER_NAME? (AUTO_BANNER_NAME+' • ') : ''; pill.textContent = 'Auto: '+name+ rem + 's left'; }
+
+// Poll only /api/auto/config to advance+read current on rollover or occasional off-check
+async function refreshAutoBannerState(){ if (AUTO_BANNER_FETCHING) return; try{ AUTO_BANNER_FETCHING=true; const rc=await http('/api/auto/config', undefined, {silent:true}); const jc=await rc.json(); const prevOn=AUTO_BANNER_ON; const prevRemain=AUTO_BANNER_LOCAL_REMAIN; const prevName=AUTO_BANNER_NAME; AUTO_BANNER_ON = !!(jc && jc.on); AUTO_BANNER_LOCAL_REMAIN = Math.max(0, parseInt(jc && jc.current && jc.current.remaining || 0, 10)); AUTO_BANNER_NAME = (jc && jc.current && jc.current.name) ? String(jc.current.name) : ''; if (!AUTO_BANNER_ON){ AUTO_BANNER_NAME=''; }
+ updateAutoBanner(); const rollover = prevOn && AUTO_BANNER_ON && (prevRemain<=0) && (AUTO_BANNER_LOCAL_REMAIN>0) && (AUTO_BANNER_NAME!==prevName || AUTO_BANNER_LOCAL_REMAIN>prevRemain); if (rollover){ const mode=document.querySelector('.navlink[data-mode].active')?.dataset.mode; if (mode!=='auto'){ try{ await loadState(); }catch(_){} } } } catch(_) { /* ignore */ } finally { AUTO_BANNER_FETCHING=false; } }
+
+function startAutoBannerPolling(){ stopAutoBannerPolling(); // seed once
+ refreshAutoBannerState(); AUTO_BANNER_TIMER = setInterval(async ()=>{ if (AUTO_BANNER_ON){ if (AUTO_BANNER_LOCAL_REMAIN>0){ AUTO_BANNER_LOCAL_REMAIN -= 1; updateAutoBanner(); } else { await refreshAutoBannerState(); } } else { // occasionally check if Auto turned on (every 5s)
+ AUTO_BANNER_OFF_TICKS = (AUTO_BANNER_OFF_TICKS+1)%5; if (AUTO_BANNER_OFF_TICKS===0){ await refreshAutoBannerState(); } }
+ }, 1000); }
+
+function stopAutoBannerPolling(){ if (AUTO_BANNER_TIMER){ clearInterval(AUTO_BANNER_TIMER); AUTO_BANNER_TIMER=null; } AUTO_BANNER_FETCHING=false; AUTO_BANNER_OFF_TICKS=0; const pill=$('autoBanner'); if(pill){ pill.style.display='none'; pill.textContent='\u00a0'; pill.style.borderColor='var(--outline)'; pill.style.color='var(--muted)'; } }
+
 
 
 // Wire Auto controls
-(function(){ const selAll=$('autoSelAll'); if(selAll){ selAll.addEventListener('change', async ()=>{ if(!Array.isArray(FAVS)) return; if(selAll.checked){ AUTO_CFG.selections = FAVS.map(it=>it.id); } else { AUTO_CFG.selections = []; } renderAutoFavList(); await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } }); }
+(function(){ const selAll=$('autoSelAll'); if(selAll){ selAll.addEventListener('change', async ()=>{ if(!Array.isArray(FAVS)) return; if(selAll.checked){ AUTO_CFG.selections = FAVS.map(it=>it.id); } else { AUTO_CFG.selections = []; } renderAutoFavList(); if (AUTO_CFG.on){ updateAutoStatus(); } }); }
   const startBtn=$('autoStart'); if(startBtn) startBtn.addEventListener('click', startAuto);
   const stopBtn=$('autoStop'); if(stopBtn) stopBtn.addEventListener('click', stopAuto);
-  const iv=$('autoInterval'); if(iv) iv.addEventListener('change', async ()=>{ await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } });
-  const rand=$('autoRandomize'); if(rand) rand.addEventListener('change', async ()=>{ await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } });
+  const iv=$('autoInterval'); if(iv) iv.addEventListener('change', async ()=>{ readAutoFormIntoCfg(); if (AUTO_CFG.on){ updateAutoStatus(); } });
+  const rand=$('autoRandomize'); if(rand) rand.addEventListener('change', async ()=>{ readAutoFormIntoCfg(); if (AUTO_CFG.on){ updateAutoStatus(); } });
 })();
-async function fetchFavorites(){ try{ const r=await fetch('/api/favorites'); if(!r.ok) throw new Error('fav get failed'); const data=await r.json(); FAVS = Array.isArray(data.items)? data.items : []; FAVS_LOADED=true; }catch(e){ console.warn('favorites load failed', e); FAVS=[]; FAVS_LOADED=false; } finally { const addBtn=$('btnFavAdd'), openBtn=$('btnFavOpen'); if(addBtn) addBtn.disabled=!FAVS_LOADED; if(openBtn) openBtn.disabled=!FAVS_LOADED; } }
+async function fetchFavorites(){ try{ const r=await http('/api/favorites'); const data=await r.json(); FAVS = Array.isArray(data.items)? data.items : []; FAVS_LOADED=true; }catch(e){ console.warn('favorites load failed', e); FAVS=[]; FAVS_LOADED=false; } finally { const addBtn=$('btnFavAdd'), openBtn=$('btnFavOpen'); if(addBtn) addBtn.disabled=!FAVS_LOADED; if(openBtn) openBtn.disabled=!FAVS_LOADED; } }
 async function ensureFavoritesLoaded(){ if (FAVS_LOADED) return; await fetchFavorites(); }
-async function addFavorite(){ if(!FAVS_LOADED) return; const name=window.prompt('Name this favorite:'); if(!name) return; const cfg=buildExportConfig(); const body={ name, ...cfg }; setStatus('saving…','saving'); try{ const r=await fetch('/api/favorites/add',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); if(!r.ok) throw new Error('fav add failed'); const js=await r.json(); await fetchFavorites();
-  // Auto-select newly added favorite if in Auto mode or no selections yet
+async function addFavorite(){ if(!FAVS_LOADED) return; const name=window.prompt('Name this favorite:'); if(!name) return; const cfg=buildExportConfig(); const body={ name, ...cfg }; setStatus('saving…','saving'); try{ const r=await http('/api/favorites/add',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); const js=await r.json(); await fetchFavorites();
+  // Auto-select newly added favorite if in Auto mode or no selections yet (do not persist until Start)
   const newId = (js && typeof js.id === 'number') ? js.id : (FAVS.length? FAVS.length-1 : -1);
   const inAuto = (document.querySelector('.navlink[data-mode].active')?.dataset.mode==='auto');
   if (newId>=0 && (inAuto || AUTO_CFG.selections.length===0)){
     if (!AUTO_CFG.selections.includes(newId)) AUTO_CFG.selections.push(newId);
-    if (inAuto){ await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } }
+    if (inAuto && AUTO_CFG.on){ updateAutoStatus(); }
   }
   // Live refresh lists
   if(!$('favModal').hidden){ renderFavList(); }
   renderAutoFavList(); updateSelectAllIndeterminate();
   setStatus('saved','saved');
  }catch(e){ console.error('addFavorite failed', e); setStatus('error','error'); } }
-async function deleteFavorite(id){ setStatus('deleting…','saving'); try{ const r=await fetch('/api/favorites/delete',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})}); if(!r.ok) throw new Error('fav delete failed'); await fetchFavorites(); if(!$('favModal').hidden){ renderFavList(); }
+async function deleteFavorite(id){ setStatus('deleting…','saving'); try{ await http('/api/favorites/delete',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})}); await fetchFavorites(); if(!$('favModal').hidden){ renderFavList(); }
   // refresh auto UI too
   // Drop any now-missing IDs from selections
   const validIds = new Set(FAVS.map(it=>it.id));
   AUTO_CFG.selections = AUTO_CFG.selections.filter(id=>validIds.has(id));
   renderAutoFavList(); updateSelectAllIndeterminate();
   if(document.querySelector('.navlink[data-mode].active')?.dataset.mode==='auto'){
-    await saveAutoSettings();
-    if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); }
+    if (AUTO_CFG.on){ updateAutoStatus(); }
   }
   setStatus('deleted','deleted');
  } catch(e){ console.error('deleteFavorite failed', e); setStatus('error','error'); } }
@@ -674,7 +718,7 @@ function buildGrids(){
 
 async function loadState(){
   try{
-    const r=await fetch('/api/state'); if(!r.ok) throw new Error('state get failed'); const s=await r.json();
+    const r=await http('/api/state', undefined, {silent:true}); const s=await r.json();
     // Leader
     if (s.leader){
       $('L_anim').value=String(s.leader.animIndex); buildControlsFor('L');
@@ -703,7 +747,7 @@ async function init(){
   await buildSchema();
   buildAnimSelect($('L_anim')); buildAnimSelect($('F_anim'));
   buildControlsFor('L'); buildControlsFor('F'); buildGlobals();
-  initTabs(); buildGrids(); setMode('normal');
+  initTabs(); buildGrids(); setMode('normal'); startAutoBannerPolling();
   // Wire Import / Export action buttons
   const btnImport=$('btnImport'); if(btnImport){ btnImport.addEventListener('click', (e)=>{ e.preventDefault(); doImport(); }); }
   const btnExport=$('btnExport'); if(btnExport){ btnExport.addEventListener('click', (e)=>{ e.preventDefault(); doExport(); }); }
@@ -714,6 +758,9 @@ async function init(){
   $('apply').addEventListener('click', async ()=>{
     const btn=$('apply'); if(btn) btn.disabled=true; setStatus('saving…','saving');
     try {
+      // If Auto is running, confirm with the user
+      let autoOn=false; try{ const r=await http('/api/state', undefined, {silent:true}); if(r.ok){ const s=await r.json(); autoOn = !!s.autoOn; } }catch{}
+      if (autoOn){ const ok = window.confirm('Auto mode is running. Applying settings will stop Auto. Continue?'); if(!ok){ setStatus('', ''); return; } }
       const g=gatherGlobals(); const L=gather('L'); const F=gather('F');
       console.log('Applying CFG2', {globals:g, leader:L, follower:F});
       // Send leader then follower
@@ -728,7 +775,7 @@ async function init(){
   let stateOk=false, favOk=false, cfgOk=false;
   try{ stateOk = await loadState(); }catch{ stateOk=false; }
   try{ await fetchFavorites(); favOk=true; }catch{ favOk=false; }
-  try { const r = await fetch('/api/auto/config'); if (r.ok) { const data = await r.json(); if (data && data.on) { setMode('auto'); } cfgOk=true; } else { cfgOk=false; } } catch(_) { cfgOk=false; }
+  try { const r = await http('/api/auto/config', undefined, {silent:true}); if (r.ok) { const data = await r.json(); if (data && data.on) { setMode('auto'); } cfgOk=true; } else { cfgOk=false; } } catch(_) { cfgOk=false; }
   hideOverlay();
 }
 init();

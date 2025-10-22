@@ -43,6 +43,25 @@ static const char *STATE_JSON = R"({
 // In-memory favorites store for test server
 static std::vector<std::string> gFavorites;
 
+// --- Simulated dynamic animation state (mirrors firmware surface) ---
+static int gLeaderAnimIndex = 1;
+static int gFollowerAnimIndex = 1;
+static std::unordered_map<int,float> gLeaderParams; // key: pid, value: number
+static std::unordered_map<int,float> gFollowerParams;
+
+static void initDefaultParams(){
+    if (gLeaderParams.empty()){
+        gLeaderParams[(int)AnimSchema::PID_GLOBAL_SPEED] = 1.0f;
+        gLeaderParams[(int)AnimSchema::PID_GLOBAL_MIN] = 0.0f;
+        gLeaderParams[(int)AnimSchema::PID_GLOBAL_MAX] = 1.0f;
+    }
+    if (gFollowerParams.empty()){
+        gFollowerParams[(int)AnimSchema::PID_GLOBAL_SPEED] = 1.0f;
+        gFollowerParams[(int)AnimSchema::PID_GLOBAL_MIN] = 0.0f;
+        gFollowerParams[(int)AnimSchema::PID_GLOBAL_MAX] = 1.0f;
+    }
+}
+
 // --- Auto mode simulated state ---
 static bool gAutoOn = false;
 static int gAutoIntervalMin = 1; // minutes
@@ -54,7 +73,30 @@ static std::chrono::steady_clock::time_point gAutoLastSwitch;
 static void seedRandOnce(){ static bool s=false; if(!s){ std::srand((unsigned)std::time(nullptr)); s=true; } }
 
 static void applyFavoriteSim(int favId){
-    (void)favId; // In simulator we don't need to do anything; UI posts /api/cfg2 independently
+    // Parse favorite JSON and apply to simulated dynamic state like firmware
+    if (favId < 0 || favId >= (int)gFavorites.size()) return;
+    initDefaultParams();
+    const std::string &cfg = gFavorites[favId];
+    auto findNum=[&](const std::string &s, size_t start, size_t end, const char *key, double defv){
+        size_t k = s.find(key, start); if (k==std::string::npos || k>=end) return defv; k = s.find(':', k); if (k==std::string::npos || k>=end) return defv; k++; while (k<end && s[k]==' ') k++; size_t e=k; while (e<end && (std::isdigit((unsigned char)s[e])||s[e]=='-'||s[e]=='+'||s[e]=='.'||s[e]=='e'||s[e]=='E')) e++; try{ return std::stod(s.substr(k, e-k)); }catch(...){ return defv; } };
+    auto parseBlock=[&](const char* blockName, int &animIndex, std::unordered_map<int,float> &pmap){
+        size_t b = cfg.find(blockName); if (b==std::string::npos) return; size_t bl = cfg.find('{', b); if (bl==std::string::npos) return; size_t br = cfg.find('}', bl); if (br==std::string::npos) br = cfg.size();
+        // animIndex
+        double a = findNum(cfg, bl, br, "\"animIndex\"", animIndex);
+        animIndex = (int)a;
+        // scan id/value pairs in this block
+        size_t pos = bl; int safety=0;
+        while (pos < br && safety < 256){
+            size_t idk = cfg.find("\"id\"", pos); if (idk==std::string::npos || idk>=br) break; size_t col = cfg.find(':', idk); if (col==std::string::npos) break; size_t is = col+1; while (is<br && cfg[is]==' ') is++; size_t ie=is; while (ie<br && std::isdigit((unsigned char)cfg[ie])) ie++; int pid = 0; try{ pid = std::stoi(cfg.substr(is, ie-is)); }catch(...){ pid = 0; }
+            size_t vk = cfg.find("\"value\"", ie); if (vk==std::string::npos || vk>=br){ pos = ie; safety++; continue; }
+            col = cfg.find(':', vk); if (col==std::string::npos) break; size_t vs = col+1; while (vs<br && cfg[vs]==' ') vs++; size_t ve=vs; while (ve<br && (std::isdigit((unsigned char)cfg[ve])||cfg[ve]=='-'||cfg[ve]=='+'||cfg[ve]=='.'||cfg[ve]=='e'||cfg[ve]=='E')) ve++; double v=0.0; try{ v = std::stod(cfg.substr(vs, ve-vs)); }catch(...){ v=0.0; }
+            pmap[pid] = (float)v; pos = ve; safety++;
+        }
+    };
+    parseBlock("\"leader\"", gLeaderAnimIndex, gLeaderParams);
+    parseBlock("\"follower\"", gFollowerAnimIndex, gFollowerParams);
+    // Optional globals
+    size_t gpos = cfg.find("\"globals\""); if (gpos!=std::string::npos){ size_t gl = cfg.find('{', gpos); size_t gr = cfg.find('}', gl==std::string::npos?0:gl); if (gl!=std::string::npos && gr!=std::string::npos && gr>gl){ double gs = findNum(cfg, gl, gr, "\"globalSpeed\"", 1.0); double gmin = findNum(cfg, gl, gr, "\"globalMin\"", 0.0); double gmax = findNum(cfg, gl, gr, "\"globalMax\"", 1.0); gLeaderParams[(int)AnimSchema::PID_GLOBAL_SPEED]=(float)gs; gFollowerParams[(int)AnimSchema::PID_GLOBAL_SPEED]=(float)gs; gLeaderParams[(int)AnimSchema::PID_GLOBAL_MIN]=(float)gmin; gFollowerParams[(int)AnimSchema::PID_GLOBAL_MIN]=(float)gmin; gLeaderParams[(int)AnimSchema::PID_GLOBAL_MAX]=(float)gmax; gFollowerParams[(int)AnimSchema::PID_GLOBAL_MAX]=(float)gmax; } }
 }
 
 static void advanceAutoIfNeeded(){
@@ -154,6 +196,43 @@ static std::vector<int> extractSelections(const std::string &body){
     return out;
 }
 
+// Parse an array of objects with numeric id/value pairs under a key name
+static std::vector<std::pair<int,float>> extractIdValueArray(const std::string &body, const char *key){
+    std::vector<std::pair<int,float>> out;
+    auto sidx = body.find(key);
+    if (sidx==std::string::npos) return out;
+    auto lb = body.find('[', sidx);
+    auto rb = body.find(']', lb==std::string::npos?0:lb);
+    if (lb==std::string::npos || rb==std::string::npos || rb<=lb) return out;
+    size_t pos = lb+1; int safety=0;
+    while (pos < rb && safety < 1024){
+        auto idk = body.find("\"id\"", pos); if (idk==std::string::npos || idk>=rb) break;
+        auto col = body.find(':', idk); if (col==std::string::npos || col>=rb) break; size_t is = col+1; while (is<rb && body[is]==' ') is++;
+        size_t ie=is; while (ie<rb && std::isdigit((unsigned char)body[ie])) ie++;
+        int pid = 0; try{ pid = std::stoi(body.substr(is, ie-is)); }catch(...){ pid=0; }
+        auto vk = body.find("\"value\"", ie); if (vk==std::string::npos || vk>=rb){ pos = ie; safety++; continue; }
+        col = body.find(':', vk); if (col==std::string::npos || col>=rb) break; size_t vs = col+1; while (vs<rb && body[vs]==' ') vs++;
+        size_t ve=vs; while (ve<rb && (std::isdigit((unsigned char)body[ve])||body[ve]=='-'||body[ve]=='+'||body[ve]=='.'||body[ve]=='e'||body[ve]=='E')) ve++;
+        float val = 0.0f; try{ val = std::stof(body.substr(vs, ve-vs)); }catch(...){ val=0.0f; }
+        out.emplace_back(pid, val);
+        pos = ve; safety++;
+    }
+    return out;
+}
+
+static void applyCfg2FromBody(const std::string &body){
+    initDefaultParams();
+    // role and animIndex
+    int role = extractNum(body, "\"role\"", -1);
+    int animIndex = extractNum(body, "\"animIndex\"", -1);
+    auto params = extractIdValueArray(body, "\"params\"");
+    auto globals = extractIdValueArray(body, "\"globals\"");
+    if (role==0){ if (animIndex>=0) gLeaderAnimIndex = animIndex; for (auto &pr : params) gLeaderParams[pr.first]=pr.second; }
+    else if (role==1){ if (animIndex>=0) gFollowerAnimIndex = animIndex; for (auto &pr : params) gFollowerParams[pr.first]=pr.second; }
+    // Apply globals to both
+    for (auto &pr : globals){ gLeaderParams[pr.first]=pr.second; gFollowerParams[pr.first]=pr.second; }
+}
+
 class SimpleHttpServer {
 public:
     explicit SimpleHttpServer(int port):port_(port){}
@@ -231,28 +310,46 @@ private:
         if(path=="/" || path=="/index.html"){
             sendResponse(fd, 200, "text/html; charset=utf-8", indexHtml);
         } else if(path=="/api/state"){
-            // Build dynamic state including auto flags
+            // Build dynamic state including auto flags and current params
             advanceAutoIfNeeded();
+            auto serializeParams=[&](const std::unordered_map<int,float> &m){
+                std::ostringstream ps;
+                ps << "[";
+                bool first=true;
+                for (const auto &kv : m){
+                    if (!first) ps << ",";
+                    first=false;
+                    ps << "{\"id\":"<< kv.first <<",\"value\":"<< kv.second <<"}";
+                }
+                // Ensure globals exist with defaults if missing
+                auto ensure=[&](int pid, float defv){
+                    if (m.find(pid)==m.end()){
+                        if (!first) ps << ",";
+                        first=false;
+                        ps << "{\"id\":"<< pid <<",\"value\":"<< defv <<"}";
+                    }
+                };
+                ensure((int)AnimSchema::PID_GLOBAL_SPEED, 1.0f);
+                ensure((int)AnimSchema::PID_GLOBAL_MIN,   0.0f);
+                ensure((int)AnimSchema::PID_GLOBAL_MAX,   1.0f);
+                ps << "]";
+                return ps.str();
+            };
             std::ostringstream s;
             s << "{";
             s << "\"autoOn\":" << (gAutoOn?"true":"false") << ",";
             s << "\"autoRemaining\":" << remainingSeconds() << ",";
-            // Provide only global params with correct IDs and sane defaults
-            s << "\"leader\":{\"animIndex\":1,\"params\":[";
-            s << "{\"id\":" << (int)AnimSchema::PID_GLOBAL_SPEED << ",\"value\":1.0},";
-            s << "{\"id\":" << (int)AnimSchema::PID_GLOBAL_MIN   << ",\"value\":0.0},";
-            s << "{\"id\":" << (int)AnimSchema::PID_GLOBAL_MAX   << ",\"value\":1.0}";
-            s << "]},";
-            s << "\"follower\":{\"animIndex\":1,\"params\":[]}";
+            s << "\"leader\":{\"animIndex\":"<< gLeaderAnimIndex << ",\"params\":"<< serializeParams(gLeaderParams) << "},";
+            s << "\"follower\":{\"animIndex\":"<< gFollowerAnimIndex << ",\"params\":"<< serializeParams(gFollowerParams) << "}";
             s << "}";
             sendResponse(fd, 200, "application/json", s.str());
         } else if(path=="/api/cfg2"){
-            // Stop Auto when manual config is applied
+            // Stop Auto when manual config is applied and apply body
             if (gAutoOn) {
                 gAutoOn = false;
                 std::cout << "[sim] Auto stopped due to cfg2" << std::endl;
             }
-            (void)body;
+            applyCfg2FromBody(body);
             sendResponse(fd, 200, "application/json", "{\"ok\":true}");
         } else if(path=="/api/favorites" && method=="GET"){
             std::this_thread::sleep_for(std::chrono::seconds(1)); // simulate delay
