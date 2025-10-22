@@ -225,6 +225,30 @@ function parseSchemaAndFix(jsonText) {
 const SCHEMA = parseSchemaAndFix(SCHEMA_JSON);
 const $ = (id)=>document.getElementById(id);
 
+let __statusTimer=null;
+function setStatus(text, kind){
+  const st=$('status'); if(!st) return;
+  if(__statusTimer){ clearTimeout(__statusTimer); __statusTimer=null; }
+  st.textContent = text || '\u00a0';
+  let border='var(--outline)', color='var(--muted)';
+  switch(kind){
+    case 'saving': border='var(--accent1)'; color='var(--accent1)'; break;
+    case 'saved':
+    case 'applied':
+    case 'loaded':
+    case 'exported':
+    case 'imported':
+    case 'deleted':
+      border='var(--accent2)'; color='var(--accent2)'; break;
+    case 'error': border='var(--danger)'; color='var(--danger)'; break;
+    default: break;
+  }
+  st.style.borderColor=border; st.style.color=color; st.style.background='transparent';
+  if(['saved','applied','loaded','exported','imported','deleted'].includes(kind)){
+    __statusTimer=setTimeout(()=>{ st.textContent='\u00a0'; st.style.borderColor='var(--outline)'; st.style.color='var(--muted)'; __statusTimer=null; }, 1400);
+  }
+}
+
 // Navbar mode switching (only links with data-mode act as tabs)
 const modeLinks=[...document.querySelectorAll('.navlink[data-mode]')];
 const hamburger=document.querySelector('.hamburger');
@@ -358,10 +382,10 @@ function gatherGlobals(){
   }); return params; }
 
 async function send(role, animIndex, params, globals){
-  try{
-    const body=JSON.stringify({role,animIndex,params,globals});
-    await fetch('/api/cfg2',{method:'POST',headers:{'Content-Type':'application/json'},body});
-  }catch(e){console.error('send failed',e);} }
+  const body=JSON.stringify({role,animIndex,params,globals});
+  const r = await fetch('/api/cfg2',{method:'POST',headers:{'Content-Type':'application/json'},body});
+  if(!r.ok) throw new Error('cfg2 request failed: '+r.status);
+}
 
 // ----- Favorites -----
 let FAVS=[]; let FAVS_LOADED=false;
@@ -475,17 +499,31 @@ function stopAutoStatusPolling(){ if (AUTO_STATUS_TIMER){ clearInterval(AUTO_STA
 })();
 async function fetchFavorites(){ try{ const r=await fetch('/api/favorites'); if(!r.ok) throw new Error('fav get failed'); const data=await r.json(); FAVS = Array.isArray(data.items)? data.items : []; FAVS_LOADED=true; }catch(e){ console.warn('favorites load failed', e); FAVS=[]; FAVS_LOADED=false; } finally { const addBtn=$('btnFavAdd'), openBtn=$('btnFavOpen'); if(addBtn) addBtn.disabled=!FAVS_LOADED; if(openBtn) openBtn.disabled=!FAVS_LOADED; } }
 async function ensureFavoritesLoaded(){ if (FAVS_LOADED) return; await fetchFavorites(); }
-async function addFavorite(){ if(!FAVS_LOADED) return; const name=window.prompt('Name this favorite:'); if(!name) return; const cfg=buildExportConfig(); const body={ name, ...cfg }; try{ const r=await fetch('/api/favorites/add',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); if(!r.ok) throw new Error('fav add failed'); const js=await r.json(); const st=$('status'); if(st){ st.textContent='saved'; setTimeout(()=>st.textContent='\u00a0', 1200); } await fetchFavorites();
+async function addFavorite(){ if(!FAVS_LOADED) return; const name=window.prompt('Name this favorite:'); if(!name) return; const cfg=buildExportConfig(); const body={ name, ...cfg }; setStatus('saving…','saving'); try{ const r=await fetch('/api/favorites/add',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); if(!r.ok) throw new Error('fav add failed'); const js=await r.json(); await fetchFavorites();
   // Auto-select newly added favorite if in Auto mode or no selections yet
   const newId = (js && typeof js.id === 'number') ? js.id : (FAVS.length? FAVS.length-1 : -1);
-  if (newId>=0 && (document.querySelector('.navlink[data-mode].active')?.dataset.mode==='auto' || AUTO_CFG.selections.length===0)){
+  const inAuto = (document.querySelector('.navlink[data-mode].active')?.dataset.mode==='auto');
+  if (newId>=0 && (inAuto || AUTO_CFG.selections.length===0)){
     if (!AUTO_CFG.selections.includes(newId)) AUTO_CFG.selections.push(newId);
-    renderAutoFavList(); updateSelectAllIndeterminate();
+    if (inAuto){ await saveAutoSettings(); if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); } }
   }
- }catch(e){ console.error('addFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } } }
-async function deleteFavorite(id){ try{ const r=await fetch('/api/favorites/delete',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})}); if(!r.ok) throw new Error('fav delete failed'); await fetchFavorites(); renderFavList(); // refresh auto UI too
-  renderAutoFavList(); updateSelectAllIndeterminate(); if(document.querySelector('.navlink[data-mode].active')?.dataset.mode==='auto'){ await loadAutoConfig(); }
-} catch(e){ console.error('deleteFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } } }
+  // Live refresh lists
+  if(!$('favModal').hidden){ renderFavList(); }
+  renderAutoFavList(); updateSelectAllIndeterminate();
+  setStatus('saved','saved');
+ }catch(e){ console.error('addFavorite failed', e); setStatus('error','error'); } }
+async function deleteFavorite(id){ setStatus('deleting…','saving'); try{ const r=await fetch('/api/favorites/delete',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})}); if(!r.ok) throw new Error('fav delete failed'); await fetchFavorites(); if(!$('favModal').hidden){ renderFavList(); }
+  // refresh auto UI too
+  // Drop any now-missing IDs from selections
+  const validIds = new Set(FAVS.map(it=>it.id));
+  AUTO_CFG.selections = AUTO_CFG.selections.filter(id=>validIds.has(id));
+  renderAutoFavList(); updateSelectAllIndeterminate();
+  if(document.querySelector('.navlink[data-mode].active')?.dataset.mode==='auto'){
+    await saveAutoSettings();
+    if (AUTO_CFG.on){ AUTO_LOCAL_REMAIN = Math.max(1, parseInt(String(AUTO_CFG.interval||1),10)) * 60; updateAutoStatus(); }
+  }
+  setStatus('deleted','deleted');
+ } catch(e){ console.error('deleteFavorite failed', e); setStatus('error','error'); } }
 function openFavorites(){ renderFavList(); const m=$('favModal'); if(m) m.hidden=false; }
 function closeFavorites(){ const m=$('favModal'); if(m) m.hidden=true; }
 
@@ -547,10 +585,10 @@ async function loadFavorite(item){
     await send(0,L.animIndex,L.params,g);
     await new Promise(r=>setTimeout(r,40));
     await send(1,F.animIndex,F.params,g);
-    const st=$('status'); if(st){ st.textContent='loaded'; setTimeout(()=>st.textContent='\u00a0', 1400); }
+    setStatus('loaded','loaded');
     // Close modal if open
     closeFavorites();
-  }catch(e){ console.error('loadFavorite failed', e); const st=$('status'); if(st){ st.textContent='error'; st.style.background='#ef4444'; } }
+  }catch(e){ console.error('loadFavorite failed', e); setStatus('error','error'); }
 }
 
 
@@ -559,7 +597,7 @@ async function doExport(){
   const cfg=buildExportConfig(); const text=JSON.stringify(cfg);
   const ok=await copyToClipboard(text);
   if(!ok){ window.prompt('Copy config JSON:', text); }
-  const st=$('status'); if(st){ st.textContent='exported'; setTimeout(()=>st.textContent='\u00a0',1200); }
+  setStatus('exported','exported');
 }
 
 async function doImport(){
@@ -569,7 +607,7 @@ async function doImport(){
   let cfg=null; try{ cfg=JSON.parse(text); }catch{ alert('Invalid JSON'); return; }
   const err=validateConfig(cfg); if(err){ alert('Invalid config: '+err); return; }
   applyImportedConfig(cfg);
-  const st=$('status'); if(st){ st.textContent='imported'; setTimeout(()=>st.textContent='\u00a0',1200); }
+  setStatus('imported','imported');
 }
 
 function findSingleAnimIndex(){
@@ -622,7 +660,7 @@ function applySequentialSelection(prefix, selectedIndex){
     });
     // Determine role: prefix 'L' -> 0, 'F' -> 1
     const role = (prefix==='L')?0:1;
-    send(role, singleIdx, params, globals);
+    send(role, singleIdx, params, globals).catch(e=>console.warn('sequential send failed', e));
   }
 }
 
@@ -674,6 +712,7 @@ async function init(){
   const btnFavOpen=$('btnFavOpen'); if(btnFavOpen){ btnFavOpen.addEventListener('click', (e)=>{ e.preventDefault(); openFavorites(); }); }
   const favClose=$('favClose'); if(favClose){ favClose.addEventListener('click', (e)=>{ e.preventDefault(); closeFavorites(); }); }
   $('apply').addEventListener('click', async ()=>{
+    const btn=$('apply'); if(btn) btn.disabled=true; setStatus('saving…','saving');
     try {
       const g=gatherGlobals(); const L=gather('L'); const F=gather('F');
       console.log('Applying CFG2', {globals:g, leader:L, follower:F});
@@ -681,8 +720,9 @@ async function init(){
       await send(0,L.animIndex,L.params,g);
       await new Promise(r=>setTimeout(r,40));
       await send(1,F.animIndex,F.params,g);
-      const st=$('status'); st.textContent='applied'; setTimeout(()=>st.textContent='\u00a0',1600);
-    } catch(err){ console.error(err); const st=$('status'); st.textContent='error'; st.style.background='#ef4444'; }
+      setStatus('saved','saved');
+    } catch(err){ console.error(err); setStatus('error','error'); }
+    finally { if(btn) btn.disabled=false; }
   });
   // First-load: wait for state, favorites, and auto config
   let stateOk=false, favOk=false, cfgOk=false;
